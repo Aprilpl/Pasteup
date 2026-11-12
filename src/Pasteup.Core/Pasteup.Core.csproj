@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows 专属 TFM（注册表/GDI/P-Invoke），但不引用任何 UI 框架：Core 无 UI 依赖的规则不变 -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Pasteup.Core</RootNamespace>
+    <AssemblyName>Pasteup.Core</AssemblyName>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <!-- 零 UI、零警告存量的基础库：推荐级分析器全开 + 警告即错误（App 层暂不跟，有在途警告存量） -->
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,31 @@
+<!--
+  贴图窗口：无边框、置顶、不抢焦点。交互：拖拽移动 / 滚轮缩放(锚点=光标) / Ctrl+滚轮透明度 /
+  双击 1:1 / Esc 关闭 / F9 点击穿透 / 右键菜单。允许透明关闭（性能优先，贴图即矩形）。
+-->
+<Window x:Class="Pasteup.App.Views.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="贴图" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        Icon="pack://application:,,,/Assets/app.ico"
+        ShowActivated="False" Topmost="True" Focusable="True"
+        Background="Transparent"
+        PreviewKeyDown="OnPreviewKeyDown"
+        MouseDoubleClick="OnResetZoom"
+        PreviewMouseWheel="OnMouseWheel" Closing="OnClosing">
+    <!-- 透明背景 = 全窗命中层（等比缩放后可能的信箱区也吃事件，拖动/拉边不落空） -->
+    <Grid x:Name="Container" Background="Transparent">
+        <Grid.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="点击穿透（F9）" Click="OnMenuToggleThrough"/>
+                <MenuItem Header="复制图像" Click="OnMenuCopy"/>
+                <Separator/>
+                <MenuItem Header="关闭贴图（Esc）" Click="OnMenuClose"/>
+            </ContextMenu>
+        </Grid.ContextMenu>
+        <Border x:Name="Edge" BorderThickness="1" BorderBrush="{DynamicResource EdgeBrush}"
+                CornerRadius="2" SnapsToDevicePixels="True">
+            <Image x:Name="Img" Stretch="Uniform" RenderOptions.BitmapScalingMode="Linear"
+                   RenderOptions.EdgeMode="Aliased"/>
+        </Border>
+    </Grid>
+</Window>

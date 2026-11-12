@@ -1,0 +1,124 @@
+<!--
+  空格预览（Quick Look）：结构复刻 docs/prototypes/preview/index.html 的 .preview-win——
+  外框标题栏(来源·类型) + 纸面内容(图像 420 / 文本 ≤420 出滚动) + 外框页脚(等宽元数据 + 键位)。
+  不抢焦点：ShowActivated=False + WS_EX_NOACTIVATE（面板 Deactivated 即隐藏，预览绝不夺激活）。
+  非分层不透明窗：窗口矩形 == 可见卡片（不再有 24px 阴影画布透明环，整窗可命中无需 #01 补丁）；
+  圆角与阴影交给系统——DWMWCP_ROUND + DwmExtendFrameIntoClientArea（Win32Input.EnableDwmShadow）。
+  CardRadius=8 与系统固定圆角（物理 8px 随 DPI 缩放）DIP 恒等，勿改回 PopupRadius(12)。
+-->
+<Window x:Class="Pasteup.App.Views.PreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:svc="clr-namespace:Pasteup.App.Services"
+        xmlns:vm="clr-namespace:Pasteup.App.ViewModels"
+        Title="预览"
+        Width="602" MaxHeight="620" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Topmost="True" ShowActivated="False" Focusable="False"
+        Background="{DynamicResource FrameBrush}"
+        UseLayoutRounding="True" FontFamily="{DynamicResource FontSans}">
+
+    <Window.Resources>
+        <vm:NullToVisibilityConverter x:Key="NullToVis"/>
+        <!-- 透明区棋盘底：真透明像素露出微差格纹（sheet+edge 令牌），与「没加载」的空白可区分 -->
+        <DrawingBrush x:Key="PreviewCheckerBrush" TileMode="Tile" Viewport="0,0,16,16" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="{DynamicResource SheetBrush}">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,16,16"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="{DynamicResource EdgeBrush}">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="0,0,8,8"/>
+                                <RectangleGeometry Rect="8,8,8,8"/>
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+    </Window.Resources>
+
+    <Border CornerRadius="{DynamicResource CardRadius}"
+            BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1"
+            SnapsToDevicePixels="True">
+        <Grid svc:RoundedClip.Enabled="True"
+              svc:RoundedClip.Radius="{DynamicResource CardRadius}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="44"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- ===== pv-bar：来源头像（真图标盖首字母回退） + 「来源 · 类型」+ 收起钮 ===== -->
+                <Grid Grid.Row="0" Margin="16,0,6,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Width="22" Height="22" CornerRadius="5" Background="{DynamicResource AccentTintBrush}">
+                            <Grid>
+                                <TextBlock Text="{Binding ViewModel.AppInitial}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Visibility="{Binding ViewModel.AppIcon, Converter={StaticResource NullToVis}, ConverterParameter=Inverse}"/>
+                                <Image Source="{Binding ViewModel.AppIcon}" Stretch="Uniform"
+                                       Visibility="{Binding ViewModel.AppIcon, Converter={StaticResource NullToVis}}"/>
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="{Binding ViewModel.Title}" Margin="10,0,38,0" VerticalAlignment="Center"
+                                   FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Button Style="{StaticResource IconButton}" HorizontalAlignment="Right"
+                            Click="OnCloseClick" ToolTip="收起（Space）">
+                        <ui:SymbolIcon Symbol="Dismiss24" FontSize="13"/>
+                    </Button>
+                </Grid>
+
+                <!-- ===== pv-body：纸面（图像=适配显示；文本=舒适行宽、上限出滚动） ===== -->
+                <Border Grid.Row="1" Margin="8,4,8,8" CornerRadius="{DynamicResource SheetRadius}"
+                        Background="{DynamicResource SheetBrush}"
+                        BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1">
+                    <Grid>
+                        <Grid x:Name="ImgHost" Height="420" Visibility="Collapsed"
+                              Background="{StaticResource PreviewCheckerBrush}">
+                            <Image Source="{Binding ViewModel.ImageSource}" Stretch="Uniform" StretchDirection="DownOnly"/>
+                            <TextBlock x:Name="ImgMissing" Text="图像缓存已被清理" Visibility="Collapsed"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Style="{StaticResource TextDesc}"/>
+                        </Grid>
+                        <ScrollViewer x:Name="TextHost" MaxHeight="420" Visibility="Collapsed"
+                                      VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding ViewModel.TextContent}" TextWrapping="Wrap"
+                                       Margin="22,20" LineHeight="24"
+                                       FontSize="{DynamicResource FontSizeLabel}"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <!-- ===== pv-foot：等宽元数据 + 键位（外框面，无分隔线） ===== -->
+                <Grid Grid.Row="2" Margin="16,10,16,11">
+                    <TextBlock Text="{Binding ViewModel.MetaText}" Style="{StaticResource MonoMeta}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Space" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="收起" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="↑↓" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="切换" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Enter" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="粘贴" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+</Window>

@@ -1,0 +1,35 @@
+<!--
+  Pasteup 共享令牌（浅深两主题通用）
+  源：docs/prototypes/css/pasteup.css 的 :root 段；色板见 Tokens.Light / Tokens.Dark。
+  令牌层是唯一视觉源头，控件与页面不得散落硬编码色值。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+  <!-- ========== 圆角（css: sheet-r / card-r / pill 及组件约定） ========== -->
+  <CornerRadius x:Key="SheetRadius">14</CornerRadius>   <!-- 纸面 -->
+  <CornerRadius x:Key="CardRadius">8</CornerRadius>    <!-- 卡片 / 行 / 面板 / 弹窗外框（与 DWMWCP_ROUND 系统圆角 DIP 恒等，勿改） -->
+  <CornerRadius x:Key="KbdRadius">4</CornerRadius>     <!-- kbd 快捷键块 -->
+  <!-- 全胶囊圆角不设令牌：WPF 对 CornerRadius 不做 CSS 式钳制，999 会渲染成椭圆，
+       胶囊圆角应按 控件实高/2 取值（App 侧 PillConverter 动态计算） -->
+
+  <!-- ========== 字体（css: font / mono） ========== -->
+  <!-- IBM Plex 未内嵌前的回退链；Phase 2 打包时随应用内嵌 OFL 字体 -->
+  <FontFamily x:Key="FontSans">IBM Plex Sans, Microsoft YaHei UI, Segoe UI</FontFamily>
+  <FontFamily x:Key="FontMono">IBM Plex Mono, Consolas, Microsoft YaHei UI</FontFamily>
+
+  <!-- ========== 字号（取自原型组件实际使用值；px = WPF DIP） ========== -->
+  <sys:Double x:Key="FontSizeTitle">15</sys:Double>    <!-- 设置分区标题 -->
+  <sys:Double x:Key="FontSizeLabel">13.5</sys:Double>  <!-- 设置项标题 -->
+  <sys:Double x:Key="FontSizeRow">13</sys:Double>      <!-- 历史行 / 标签页 / 窗口标题 -->
+  <sys:Double x:Key="FontSizeDesc">12.5</sys:Double>   <!-- 说明文字 / 幽灵按钮 -->
+  <sys:Double x:Key="FontSizeNote">12</sys:Double>     <!-- 分组名 / 底栏 / 计数 -->
+  <sys:Double x:Key="FontSizeMeta">11.5</sys:Double>   <!-- 时间戳（mono） -->
+  <sys:Double x:Key="FontSizeMicro">11</sys:Double>    <!-- 徽标计数 / kbd（mono） -->
+
+  <!-- ========== 语义共享色 ========== -->
+  <!-- 品牌色上的前景：两主题 accent（青/蓝）均深，统一用白 -->
+  <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF"/>
+
+</ResourceDictionary>

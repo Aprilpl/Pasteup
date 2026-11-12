@@ -1,0 +1,37 @@
+<!--
+  截图覆盖层（不透明窗口方案）：底层 = 原屏截图（静态），其上 4 块纯色半透明压暗 Border 围出选区"挖孔"。
+  相比 AllowsTransparency 分层窗口（POC 实测 p95≈36ms / CPU 62%，逐像素 CPU 混合）与
+  全屏图 + RectangleGeometry 裁剪（改 Clip 引发整图重绘，p50≈30ms），本方案每帧仅移动/缩放 4 个纯色矩形，
+  在 GPU 与软件渲染回退两种路径下均廉价。选框 2px 品牌色 + 尺寸徽标。
+-->
+<Window x:Class="Pasteup.App.Views.ScreenshotOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="截图" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Topmost="True" ShowActivated="True" AllowsTransparency="False" Background="Black"
+        Cursor="Cross" PreviewKeyDown="OnPreviewKeyDown"
+        MouseLeftButtonDown="OnMouseDown" MouseMove="OnMouseMove" MouseLeftButtonUp="OnMouseUp">
+    <Grid ClipToBounds="True">
+        <Image x:Name="Shot" Stretch="Fill"/>
+        <Canvas IsHitTestVisible="False">
+            <Rectangle x:Name="MaskTop" Fill="{DynamicResource ScrimBrush}"/>
+            <Rectangle x:Name="MaskLeft" Fill="{DynamicResource ScrimBrush}"/>
+            <Rectangle x:Name="MaskRight" Fill="{DynamicResource ScrimBrush}"/>
+            <Rectangle x:Name="MaskBottom" Fill="{DynamicResource ScrimBrush}"/>
+            <Rectangle x:Name="SelBorder" StrokeThickness="2" Stroke="{DynamicResource AccentBrush}" Visibility="Hidden"/>
+            <Border x:Name="SizeTag" CornerRadius="4" Padding="7,2" Visibility="Hidden"
+                    Background="{DynamicResource ChipBgBrush}" BorderThickness="1"
+                    BorderBrush="{DynamicResource ChipBorderBrush}">
+                <TextBlock x:Name="SizeText" FontFamily="{DynamicResource FontMono}"
+                           FontSize="11" Foreground="{DynamicResource ChipTextBrush}"/>
+            </Border>
+        </Canvas>
+        <Border x:Name="HintTag" CornerRadius="4" Padding="9,4"
+                Background="{DynamicResource ChipBgBrush}" BorderThickness="1"
+                BorderBrush="{DynamicResource ChipBorderBrush}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,40">
+            <TextBlock Text="拖拽选择区域 · 松开完成 · Esc 取消" FontSize="12"
+                       FontFamily="{DynamicResource FontSans}" Foreground="{DynamicResource ChipTextBrush}"/>
+        </Border>
+    </Grid>
+</Window>

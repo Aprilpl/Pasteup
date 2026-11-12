@@ -1,0 +1,71 @@
+<!--
+  清空历史确认对话框（定稿方案 B 卡片式，源 docs/prototypes/clear-confirm/index.html 的 .dlg-b）：
+  无窗口 chrome 的轻浮层——无 ✕、无页脚，危险感集中在红色确认钮；Esc 取消 / Enter 清空 / Space 切换「清空置顶」。
+  结构照 PreviewWindow：非分层不透明窗（窗口矩形 == 可见卡片），圆角与阴影交给系统
+  （DWMWCP_ROUND + EnableDwmShadow，CardRadius=8 与物理 8px DIP 恒等）。
+  与预览窗的关键差异：模态对话框必须可激活（不要 ShowActivated=False/Focusable=False/SetNoActivate）。
+-->
+<Window x:Class="Pasteup.App.Views.ClearConfirmWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="clr-namespace:Pasteup.App.Services"
+        Title="清空历史记录"
+        Width="402" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SheetBrush}"
+        UseLayoutRounding="True" FontFamily="{DynamicResource FontSans}">
+
+    <Border CornerRadius="{DynamicResource CardRadius}"
+            BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1"
+            SnapsToDevicePixels="True">
+        <Grid svc:RoundedClip.Enabled="True"
+              svc:RoundedClip.Radius="{DynamicResource CardRadius}"
+              Margin="20,20,20,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题（默认动作是保留置顶的清空，措辞保持中性） -->
+            <TextBlock Grid.Row="0" Text="清空历史记录？"
+                       FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextBrush}"/>
+
+            <!-- 说明文字：数字段由 code-behind 按等宽段渲染，随勾选实时改写 -->
+            <TextBlock x:Name="Desc" Grid.Row="1" Margin="0,6,0,0"
+                       TextWrapping="Wrap" LineHeight="21"
+                       FontSize="{DynamicResource FontSizeDesc}"
+                       Foreground="{DynamicResource MutedBrush}"/>
+
+            <!-- 选项：坐 panel 内衬（原型 .dlg-opt）；无置顶时整行隐藏 -->
+            <Border x:Name="OptionRow" Grid.Row="2" Margin="0,16,0,0"
+                    Background="{DynamicResource PanelBrush}"
+                    CornerRadius="{DynamicResource CardRadius}" Padding="12,11">
+                <CheckBox x:Name="ClearPinCheck"
+                          Style="{StaticResource SquareCheckBox}"
+                          Checked="OnCheckChanged" Unchecked="OnCheckChanged">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- 文案随是否有收藏条目切换（收藏默认与置顶同被保留，见 ClearConfirmText） -->
+                        <TextBlock x:Name="OptionLabel" Text="清空置顶的项目" VerticalAlignment="Center"/>
+                        <!-- pin-24-filled（FluentSystemIconsFilled U+F60C，列表置顶同款） -->
+                        <TextBlock Text="&#xF60C;" FontFamily="{DynamicResource FluentSystemIconsFilled}"
+                                   FontSize="12" Foreground="{DynamicResource MutedBrush}"
+                                   Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="PinCount" Style="{StaticResource MonoMicro}"
+                                   Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </CheckBox>
+            </Border>
+
+            <!-- 动作行：右对齐，取消 + 危险确认钮 -->
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                <Button Content="取消" MinWidth="76" Click="OnCancelClick"/>
+                <Button Content="清空" Style="{StaticResource DangerButton}"
+                        MinWidth="76" Margin="10,0,0,0" Click="OnConfirmClick"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

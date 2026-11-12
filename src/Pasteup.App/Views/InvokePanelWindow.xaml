@@ -1,0 +1,452 @@
+<!--
+  唤起面板：结构复刻 docs/prototypes/css/pasteup.css（.popup/.bar/.tabs/.sheet/.list/.foot）。
+  外框(frame)承载 logo/搜索/标签，内容坐内嵌 8px 纸面(sheet)；图像标签页为单列全宽瓦片。
+  令牌全走 DynamicResource，主题热切换即时生效。
+  非分层不透明窗：窗口矩形 == 可见卡片（无阴影画布透明环，整窗可命中无需 #01 补丁）；
+  圆角与阴影交给系统——DWMWCP_ROUND + EnableDwmShadow（ExtendFrame 底边 1px 引原生软阴影），
+  CardRadius=8 与系统固定圆角（物理 8px 随 DPI 缩放）DIP 恒等，勿改回更大圆角。
+  MaxHeight=660：SizeToContent=Height 的测量约束若为无限高，VSP 会放弃虚拟化全量实化
+  （首开 1000 容器 + 全部图像解码 ≈364MB 垃圾，2026-11-02 压测实锤）；给有限上限即恢复虚拟化，
+  OnContentRendered 切 Manual 后 WindowLimits 再放宽到工作区全高。
+  List MaxHeight=480 同因：窗口 MaxHeight 只裁窗口尺寸、不进测量约束，真正打断无限高测量链
+  的是列表自身的有限上限（内容不足时窗口仍随内容收缩）；OnContentRendered 切 Manual 后放开，
+  不妨碍此后拖大窗口。
+-->
+<Window x:Class="Pasteup.App.Views.InvokePanelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Pasteup.App.ViewModels"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:svc="clr-namespace:Pasteup.App.Services"
+        Title="Pasteup"
+        Width="550" MinWidth="480" MinHeight="380" MaxHeight="660" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Topmost="True" ShowActivated="True"
+        Background="{DynamicResource FrameBrush}"
+        PreviewKeyDown="OnPreviewKeyDown" Deactivated="OnDeactivated"
+        UseLayoutRounding="True" FontFamily="{DynamicResource FontSans}">
+
+    <Window.Resources>
+        <vm:ThumbConverter x:Key="Thumb"/>
+        <vm:BoolToActiveConverter x:Key="BoolToActive"/>
+        <vm:PillConverter x:Key="Pill"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <vm:NullToVisibilityConverter x:Key="NullToVis"/>
+
+        <!-- 分类标签：八等分整行、整格可点（同设置窗 SettingsTab 范式；基样式共享 TabButton） -->
+        <Style x:Key="PanelTab" TargetType="Button" BasedOn="{StaticResource TabButton}">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Padding" Value="0,8,0,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+
+        <!-- 图像瓦片（图像 Tab 单列全宽，138px 高 + 右上时间徽标 + 左上来源图标 + 右下旗标徽章；选中 = 品牌描边） -->
+        <DataTemplate DataType="{x:Type vm:MediaTileVm}">
+                <Border x:Name="Bd" Height="138" Margin="10,0,10,10"
+                        CornerRadius="{DynamicResource CardRadius}" ClipToBounds="True"
+                        Background="Transparent"
+                        BorderThickness="1" BorderBrush="{DynamicResource EdgeBrush}">
+                <Grid>
+                    <!-- ConverterParameter=瓦片解码宽（640 DIP × 1.75 DPI ≈ 1120 物理 px）：行缩略图 132 拉到全宽会糊 -->
+                    <Image Source="{Binding ImageFile, Converter={StaticResource Thumb}, ConverterParameter=1120}" Stretch="UniformToFill"/>
+                    <!-- 左上：来源应用图标槽（同行模板双层结构：首字母回退 + 真图标盖，D1 补齐） -->
+                    <Border Width="24" Height="24" CornerRadius="6" Margin="8"
+                            Background="{DynamicResource ChipBgBrush}" BorderThickness="1"
+                            BorderBrush="{DynamicResource ChipBorderBrush}"
+                            HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <Grid>
+                            <TextBlock Text="{Binding AppInitial}" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding AppIcon, Converter={StaticResource NullToVis}, ConverterParameter=Inverse}"/>
+                            <Image Source="{Binding AppIcon}" Stretch="Uniform" Margin="2"
+                                   Visibility="{Binding AppIcon, Converter={StaticResource NullToVis}}"/>
+                        </Grid>
+                    </Border>
+                    <Border CornerRadius="{DynamicResource KbdRadius}" Padding="7,2" Margin="8"
+                            Background="{DynamicResource ChipBgBrush}" BorderThickness="1"
+                            BorderBrush="{DynamicResource ChipBorderBrush}"
+                            HorizontalAlignment="Right" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding TimeText}" Style="{StaticResource MonoMicro}"
+                                   Foreground="{DynamicResource ChipTextBrush}"/>
+                    </Border>
+                    <!-- 右下：置顶/收藏旗标（与行模板同款码点；各旗独立显隐，D1 补齐——
+                         此前图像页 Ctrl+S/右键收藏后瓦片上无任何视觉反馈） -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
+                        <Border CornerRadius="{DynamicResource KbdRadius}" Padding="6,2" Margin="0,0,4,0"
+                                Background="{DynamicResource ChipBgBrush}" BorderThickness="1"
+                                BorderBrush="{DynamicResource ChipBorderBrush}"
+                                Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="&#xF60C;" FontFamily="{DynamicResource FluentSystemIconsFilled}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}"/>
+                        </Border>
+                        <Border CornerRadius="{DynamicResource KbdRadius}" Padding="6,2"
+                                Background="{DynamicResource ChipBgBrush}" BorderThickness="1"
+                                BorderBrush="{DynamicResource ChipBorderBrush}"
+                                Visibility="{Binding Favorite, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="&#xF719;" FontFamily="{DynamicResource FluentSystemIconsFilled}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}"/>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                    <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 行选中：底=accent-tint + 左 2px 品牌标线（原 .row.is-selected）。
+             Height=62（内容 MaxHeight 40 + 上下 Padding 18 + 余量）：行高恒定——VSP 对非均匀行高
+             的向上滚动会锚定回走重复测量（2026-11-03 实测上滚 ~8× 下滚、milcore 原生侧成本） -->
+        <DataTemplate DataType="{x:Type vm:TextRowVm}">
+            <Border x:Name="Row" Height="62" Padding="10,9" Margin="8,0" CornerRadius="{DynamicResource CardRadius}"
+                    Background="Transparent" BorderThickness="2,0,0,0" BorderBrush="Transparent"
+                    MouseEnter="OnRowMouseEnter" MouseLeave="OnRowMouseLeave">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="32"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <!-- 来源应用图标双层槽：真图标（48px 提取冻结）盖首字母回退层；AccentTint 底衬图标透明角 -->
+                    <Border Width="32" Height="32" CornerRadius="7" Background="{DynamicResource AccentTintBrush}">
+                        <Grid>
+                            <TextBlock Text="{Binding AppInitial}" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding AppIcon, Converter={StaticResource NullToVis}, ConverterParameter=Inverse}"/>
+                            <Image Source="{Binding AppIcon}" Stretch="Uniform" Margin="1"
+                                   Visibility="{Binding AppIcon, Converter={StaticResource NullToVis}}"/>
+                        </Grid>
+                    </Border>
+                    <TextBlock Grid.Column="2" Text="{Binding Preview}" Style="{StaticResource TextRow}"
+                               TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="40"
+                               VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding TimeText}" Style="{StaticResource MonoMeta}"/>
+                        <!-- 旗标在时间正下方水平居中：置顶图钉（pin-24-filled U+F60C，置顶 Tab 同款）+
+                             收藏星（star-24-filled U+F719）；两态独立可并存，收藏入口=右键菜单 / Ctrl+S -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="&#xF60C;" FontFamily="{DynamicResource FluentSystemIconsFilled}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}" Margin="0,0,3,0"
+                                       Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="&#xF719;" FontFamily="{DynamicResource FluentSystemIconsFilled}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       Visibility="{Binding Favorite, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource AccentTintBrush}"/>
+                    <Setter TargetName="Row" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                </DataTrigger>
+                <!-- 行悬停浮起（row-lift 定稿 B 下坠柔影×极淡底，docs/prototypes/row-lift/）：底色走触发器
+                     （非选中格才动，accent 底+左标线保持；画刷是元素属性上的 DynamicResource，随主题字典整替换更新）；
+                     阴影走 MouseEnter/Leave 代码后台——Effect 挂在触发器 DynamicResource 上时，主题字典整替换后
+                     不重解析（画刷能换、Effect 这个 Freezable 不能，2026-11-05 实测浅色主题残留深色阴影），且
+                     TryFindResource 现查现用天然随主题走；组头 IsHitTestVisible=False 不参与 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True"/>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource RowHoverFaintBrush}"/>
+                </MultiDataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 图像行（全部视图 media-cell：66×46 缩略图 + 尺寸 + 时间）；Height 同文本行 62 保行高恒定 -->
+        <DataTemplate DataType="{x:Type vm:MediaRowVm}">
+            <Border x:Name="Row" Height="62" Padding="10,9" Margin="8,0" CornerRadius="{DynamicResource CardRadius}"
+                    Background="Transparent" BorderThickness="2,0,0,0" BorderBrush="Transparent"
+                    MouseEnter="OnRowMouseEnter" MouseLeave="OnRowMouseLeave">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="66"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Width="66" Height="46" CornerRadius="4" BorderThickness="1"
+                            BorderBrush="{DynamicResource EdgeBrush}">
+                        <Image Source="{Binding ImageFile, Converter={StaticResource Thumb}}" Stretch="Uniform"/>
+                    </Border>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource TextRow}"/>
+                        <TextBlock Text="{Binding Meta}" Style="{StaticResource MonoMeta}" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding TimeText}" Style="{StaticResource MonoMeta}"/>
+                        <!-- 旗标与文本行同构：置顶图钉 + 收藏星并排居中（图像行原不显示置旗，2026-11-03 图标化补齐） -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="&#xF60C;" FontFamily="{DynamicResource FluentSystemIconsFilled}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}" Margin="0,0,3,0"
+                                       Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="&#xF719;" FontFamily="{DynamicResource FluentSystemIconsFilled}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       Visibility="{Binding Favorite, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource AccentTintBrush}"/>
+                    <Setter TargetName="Row" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                </DataTrigger>
+                <!-- 行悬停浮起（同文本行：淡底走触发器仅非选中格；阴影走代码后台，组头不参与） -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True"/>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource RowHoverFaintBrush}"/>
+                </MultiDataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:GroupVm}">
+            <StackPanel Orientation="Horizontal" Margin="16,10,16,6">
+                <TextBlock Text="{Binding Label}" Style="{StaticResource GroupText}"/>
+                <TextBlock Text="{Binding CountText}" Style="{StaticResource MonoMicro}" Margin="6,1,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Border CornerRadius="{DynamicResource CardRadius}"
+            Background="{DynamicResource FrameBrush}"
+            BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1"
+            SnapsToDevicePixels="True">
+        <!-- 圆角裁剪：与预览窗一致，贴角子元素不画出圆角框外（当前无贴角元素，防御未来改动） -->
+        <Grid svc:RoundedClip.Enabled="True"
+              svc:RoundedClip.Radius="{DynamicResource CardRadius}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ===== bar：logo · 搜索 · 图标按钮；顶栏背景即拖动把手（交互控件自吞按下事件） ===== -->
+            <Grid Grid.Row="0" Margin="12,12,16,10" Background="Transparent">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Image Width="26" Height="26" VerticalAlignment="Center"
+                           Source="pack://application:,,,/Assets/app-icon.png"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Pasteup" Margin="9,0,0,0" VerticalAlignment="Center"
+                               FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                </StackPanel>
+                <!-- 胶囊 = 实高一半（PillConverter）；PillRadius=999 在 WPF 会渲染成椭圆，不可用 -->
+                <Border Grid.Column="1" Height="34" Margin="12,0" CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource Self}, Converter={StaticResource Pill}}"
+                        Background="{DynamicResource ControlBgBrush}" BorderThickness="1"
+                        BorderBrush="{DynamicResource ControlBorderBrush}">
+                    <Grid Margin="14,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Symbol="Search24" FontSize="15"
+                                       Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                        <!-- 空 ContextMenu：压制 TextBox 原生编辑菜单（VK_APPS→WM_CONTEXTMENU 在消息层
+                             生成，PreviewKeyDown 置 Handled 拦不住；2026-11-02 冒烟实锤）。冒泡到
+                             列表层由 OnEntryMenuOpening 裁决（搜索框上无行 → 不开菜单） -->
+                        <!-- Delay=120：每击键整表重建在千条量级 ~45ms，逐键直刷输入发涩；
+                             延迟到停顿 120ms 再刷，VM/测试路径不变（绑定层防抖） -->
+                        <TextBox x:Name="Search" Grid.Column="1" Margin="9,0,0,0" Style="{StaticResource BareInput}"
+                                 Text="{Binding ViewModel.SearchText, UpdateSourceTrigger=PropertyChanged, Delay=120}">
+                            <TextBox.ContextMenu>
+                                <ContextMenu/>
+                            </TextBox.ContextMenu>
+                        </TextBox>
+                        <TextBlock x:Name="SearchHint" Grid.Column="1" Margin="9,0,0,0" IsHitTestVisible="False"
+                                   VerticalAlignment="Center" FontSize="13"
+                                   Foreground="{DynamicResource MutedBrush}" Text="搜索剪贴板…"/>
+                    </Grid>
+                </Border>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource IconButton}" Click="OnToggleTheme" ToolTip="切换深浅主题">
+                        <ui:SymbolIcon Symbol="WeatherMoon24" FontSize="16"/>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Click="OnOpenSettings" ToolTip="设置">
+                        <ui:SymbolIcon Symbol="Settings24" FontSize="16"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- ===== tabs：八等分整行、整格可点（激活 = 2px 品牌下划线横贯整格，同设置窗范式） ===== -->
+            <Grid Grid.Row="1" Margin="18,0,18,0">
+                <ItemsControl ItemsSource="{Binding ViewModel.Tabs}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="8"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource PanelTab}"
+                                    ToolTip="{Binding Label}"
+                                    Command="{Binding DataContext.ViewModel.SelectTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding Tab}">
+                                <Button.Tag>
+                                    <Binding Path="IsActive" Mode="OneWay" Converter="{StaticResource BoolToActive}"/>
+                                </Button.Tag>
+                                <StackPanel Orientation="Horizontal">
+                                    <!-- 图标字体显式指定（FontIcon/SymbolIcon 的资源解析对 PUA 码点不生效时会回退 tofu）；
+                                         前景不设值 → 继承按钮的 muted/hover/active 色 -->
+                                    <TextBlock Text="{Binding Glyph}" FontSize="14" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontFamily" Value="{DynamicResource FluentSystemIcons}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Filled}" Value="True">
+                                                        <Setter Property="FontFamily" Value="{DynamicResource FluentSystemIconsFilled}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding CountValue}" Style="{StaticResource MonoMicro}" Margin="6,1,0,0"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+
+            <!-- ===== sheet：内嵌 8px 纸面 ===== -->
+            <Border Grid.Row="2" Margin="8,8,8,8" CornerRadius="{DynamicResource SheetRadius}"
+                    Background="{DynamicResource SheetBrush}"
+                    BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1">
+                <Grid>
+                    <ListBox x:Name="List" BorderThickness="0" Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.CacheLength="1" VirtualizingPanel.CacheLengthUnit="Page" VirtualizingPanel.ScrollUnit="Pixel"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             MaxHeight="480"
+                             ItemsSource="{Binding ViewModel.Items}"
+                             SelectedItem="{Binding ViewModel.SelectedItem, Mode=TwoWay}"
+                             Margin="0,6,0,4" MouseDoubleClick="OnListDoubleClick"
+                             ContextMenuOpening="OnEntryMenuOpening"
+                             KeyboardNavigation.DirectionalNavigation="Contained">
+                        <!-- 复制项右键菜单（原型 docs/prototypes/context-menu/）：右键即选中（OnEntryMenuOpening），
+                             五命令 = 粘贴（Enter 同路径）/ 复制（仅写剪贴板不动 MRU）/ 收藏（只打标记）/ 置顶（状态反转）/ 删除（危险红）。
+                             收藏与置顶的文案、图标在打开前按条目状态反转（UpdateEntryMenuState）；
+                             图标码点经 Wpf.Ui 枚举反射核准，映射见 docs/rules/图标规范.md -->
+                        <ListBox.ContextMenu>
+                            <ContextMenu x:Name="EntryMenu">
+                                <MenuItem Header="粘贴" InputGestureText="Enter" Click="OnMenuPaste">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF2D6;" FontFamily="{DynamicResource FluentSystemIcons}" FontSize="15"
+                                                   Foreground="{DynamicResource MutedBrush}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="复制" Click="OnMenuCopy">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF32C;" FontFamily="{DynamicResource FluentSystemIcons}" FontSize="15"
+                                                   Foreground="{DynamicResource MutedBrush}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="MenuFavoriteItem" Header="收藏" Click="OnMenuFavorite">
+                                    <MenuItem.Icon>
+                                        <TextBlock x:Name="MenuFavoriteIcon" Text="&#xF710;"
+                                                   FontFamily="{DynamicResource FluentSystemIcons}" FontSize="15"
+                                                   Foreground="{DynamicResource MutedBrush}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="MenuPinItem" Header="置顶" Click="OnMenuPin">
+                                    <MenuItem.Icon>
+                                        <TextBlock x:Name="MenuPinIcon" Text="&#xF602;"
+                                                   FontFamily="{DynamicResource FluentSystemIcons}" FontSize="15"
+                                                   Foreground="{DynamicResource MutedBrush}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
+                                <MenuItem Header="删除" InputGestureText="Del" Click="OnMenuDelete"
+                                          Foreground="{DynamicResource DangerBrush}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF34D;" FontFamily="{DynamicResource FluentSystemIcons}" FontSize="15"
+                                                   Foreground="{DynamicResource DangerBrush}"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsGroup}" Value="True">
+                                        <Setter Property="Focusable" Value="False"/>
+                                        <Setter Property="IsHitTestVisible" Value="False"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                    <TextBlock x:Name="EmptyHint" Text="暂无剪贴板内容 — 复制点什么试试"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,48"
+                               Style="{StaticResource TextDesc}" Visibility="Collapsed"/>
+                </Grid>
+            </Border>
+
+            <!-- ===== foot：计数 + 快捷键提示（原型 .hints：每组 kbd+文字居中，组间 14px、组内 5px） ===== -->
+            <Border Grid.Row="3" Margin="24,0,24,10" BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource RuleBrush}" Padding="0,10,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding ViewModel.CountText}" Style="{StaticResource MonoMeta}"
+                               VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="↑↓" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="选择" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Space" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="预览" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Enter" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="粘贴" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Esc" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="关闭" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Ctrl+P" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="置顶" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Border Style="{StaticResource KbdChip}"><TextBlock Text="Ctrl+S" Style="{StaticResource KbdText}"/></Border>
+                            <TextBlock Text="收藏" Style="{StaticResource HintLabel}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

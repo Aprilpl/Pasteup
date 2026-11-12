@@ -1,0 +1,51 @@
+<!--
+  浅色主题 · 框中纸
+  源：docs/prototypes/css/pasteup.css 的 :root[data-theme="light"] 段（1:1 映射，键名后括注原 CSS 变量）。
+  结构：外框（垫板）承载 chrome，内容坐在内嵌 8px 的纸面上；品牌青 #1b6c80。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- ========== 表面结构 ========== -->
+  <SolidColorBrush x:Key="FrameBrush"      Color="#EAF0F1"/>  <!-- css:frame 外框（垫板） -->
+  <SolidColorBrush x:Key="SheetBrush"      Color="#FFFFFF"/>  <!-- css:sheet 纸面 -->
+  <SolidColorBrush x:Key="PanelBrush"      Color="#F4F6F8"/>  <!-- css:panel 设置面板 / 抬升面 -->
+  <SolidColorBrush x:Key="RowHoverBrush"   Color="#F2F5F6"/>  <!-- css:row-hover 行悬停 -->
+  <SolidColorBrush x:Key="RowHoverFaintBrush" Color="#8CF2F5F6"/> <!-- 行悬停极淡底：55% row-hover 预混（css color-mix 55% transparent，WPF 预混 alpha 0x8C） -->
+  <Color x:Key="RowLiftShadowColor">#1C0F282C</Color> <!-- 行悬停浮起阴影色：css 0 4px 16px rgba(15,35,40,.11)（alpha 0x1C≈11%）；效果实例在 Tokens.Base（颜色走活引用） -->
+  <SolidColorBrush x:Key="EdgeBrush"       Color="#E8EAEC"/>  <!-- css:edge 纸面 / 卡片描边 -->
+  <SolidColorBrush x:Key="RuleBrush"       Color="#F0F1F2"/>  <!-- css:rule 分隔线 -->
+  <SolidColorBrush x:Key="PopupBorderBrush" Color="#DFE5E6"/> <!-- css:popup-border 外框描边 -->
+  <SolidColorBrush x:Key="WinHoverBrush"   Color="#DDE5E7"/>  <!-- css:win-hover 标题栏 / 图标按钮悬停 -->
+  <SolidColorBrush x:Key="ScrimBrush"      Color="#8C000000"/> <!-- 截图覆盖层遮罩（55% 黑，功能性 UI，无原型对应） -->
+
+  <!-- ========== 文本 ========== -->
+  <SolidColorBrush x:Key="TextBrush"       Color="#131416"/>  <!-- css:text -->
+  <SolidColorBrush x:Key="MutedBrush"      Color="#5D5F60"/>  <!-- css:muted 次级文本 / 占位符 -->
+
+  <!-- ========== 品牌 ========== -->
+  <SolidColorBrush x:Key="AccentBrush"     Color="#1B6C80"/>  <!-- css:accent 品牌青：logo / 激活下划线 / 选中描边 -->
+  <SolidColorBrush x:Key="AccentTintBrush" Color="#E3EEF0"/>  <!-- css:accent-tint 选中行浅青底 -->
+  <SolidColorBrush x:Key="TabHoverLineBrush" Color="#8DB4BE"/> <!-- 标签悬停预告线：45% accent 预混入 frame（45% #1B6C80 + 55% #EAF0F1；CSS 用 color-mix，WPF Border 无法按边设透明度故预混） -->
+
+  <!-- ========== 危险（css: danger，仅破坏性操作使用） ========== -->
+  <SolidColorBrush x:Key="DangerBrush"       Color="#B3352C"/>  <!-- css:danger 危险红：清空确认钮 -->
+  <SolidColorBrush x:Key="DangerStrongBrush" Color="#9B2D25"/>  <!-- css:danger-strong 危险钮悬停 -->
+  <SolidColorBrush x:Key="DangerInkBrush"    Color="#FFFFFF"/>  <!-- css:danger-ink 危险钮上的文字 -->
+  <SolidColorBrush x:Key="ModalScrimBrush"   Color="#570A0C0E"/> <!-- 模态压暗遮罩 34% 黑（原型页 #scrim，无组件对应） -->
+
+  <!-- ========== 控件 ========== -->
+  <SolidColorBrush x:Key="ControlBgBrush"      Color="#FFFFFF"/>  <!-- css:control-bg -->
+  <SolidColorBrush x:Key="ControlBorderBrush"  Color="#CDCED1"/>  <!-- css:control-border -->
+  <SolidColorBrush x:Key="KbdBgBrush"          Color="#F3F4F5"/>  <!-- css:kbd-bg -->
+  <SolidColorBrush x:Key="KbdBorderBrush"      Color="#E0E2E3"/>  <!-- css:kbd-border -->
+  <SolidColorBrush x:Key="KbdTextBrush"        Color="#3A3C3D"/>  <!-- css:kbd-text -->
+  <SolidColorBrush x:Key="ChipBgBrush"         Color="#F0FFFFFF"/>  <!-- css:chip-bg rgba(255,255,255,.94) -->
+  <SolidColorBrush x:Key="ChipTextBrush"       Color="#3A3C3D"/>    <!-- css:chip-text -->
+  <SolidColorBrush x:Key="ChipBorderBrush"     Color="#E8EAEC"/>    <!-- css:chip-border -->
+  <SolidColorBrush x:Key="SwitchOffTrackBrush" Color="#C9CCCD"/>  <!-- css:switch-off-track -->
+  <SolidColorBrush x:Key="SwitchOffKnobBrush"  Color="#FFFFFF"/>  <!-- css:switch-off-knob -->
+  <SolidColorBrush x:Key="SwitchOnTrackBrush"  Color="#131416"/>  <!-- css:switch-on-track 深轨（近文本色） -->
+  <SolidColorBrush x:Key="SwitchOnKnobBrush"   Color="#FFFFFF"/>  <!-- css:switch-on-knob -->
+
+</ResourceDictionary>

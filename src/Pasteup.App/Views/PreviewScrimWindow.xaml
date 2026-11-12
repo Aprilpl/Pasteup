@@ -1,0 +1,15 @@
+<!--
+  预览遮罩：空格预览打开时盖住面板所在屏（含面板一起压暗，预览是唯一明亮浮层）。
+  AllowsTransparency + 背景=ScrimBrush（令牌自带 55% alpha）；淡入淡出走 Window.Opacity 动画。
+  （不用非透明窗+LWA_ALPHA：WPF 会在 Show/属性变更时整建扩展样式，后挂的 WS_EX_LAYERED 位被抹掉——实测两连坑。）
+-->
+<Window x:Class="Pasteup.App.Views.PreviewScrimWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pasteup Scrim"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        Topmost="True" ShowActivated="False" Focusable="False"
+        AllowsTransparency="True" Background="{DynamicResource ScrimBrush}"
+        PreviewMouseLeftButtonDown="OnScrimClick">
+    <Grid Background="Transparent"/>
+</Window>

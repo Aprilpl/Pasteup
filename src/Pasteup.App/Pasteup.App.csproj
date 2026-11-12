@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Pasteup.App</RootNamespace>
+    <AssemblyName>Pasteup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.3.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageReference Include="WPF-UI" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pasteup.Core\Pasteup.Core.csproj" />
+    <ProjectReference Include="..\Pasteup.Themes\Pasteup.Themes.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WPF Resource：窗口 Icon / 托盘经 pack URI 读取（Win32 exe 图标由 ApplicationIcon 负责） -->
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app-icon.png" />
+  </ItemGroup>
+
+</Project>

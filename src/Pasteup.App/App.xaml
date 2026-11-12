@@ -1,0 +1,17 @@
+<Application x:Class="Pasteup.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 位置 0：主题入口，ThemeManager 运行时整体替换（只操作索引 0，追加项不受影响） -->
+                <ResourceDictionary Source="pack://application:,,,/Pasteup.Themes;component/Themes/Theme.Light.xaml" />
+                <!-- Wpf.Ui 内嵌图标字体（FluentSystemIcons/Filled）：SymbolIcon 按资源键取此字体；
+                     该字典不随系统主题链下发，不合并则 PUA 码点回退文本字体渲染为方块 -->
+                <ResourceDictionary Source="pack://application:,,,/Wpf.Ui;component/Resources/Fonts.xaml" />
+                <ResourceDictionary Source="Styles/Controls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

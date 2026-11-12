@@ -1,0 +1,7 @@
+<!-- 浅色主题 · 框中纸：App 合并入口（Base + Light） -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="Tokens.Base.xaml"/>
+    <ResourceDictionary Source="Tokens.Light.xaml"/>
+  </ResourceDictionary.MergedDictionaries>
+</ResourceDictionary>

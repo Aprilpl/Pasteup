@@ -1,0 +1,59 @@
+# ===== 构建与发布产物 =====
+[Bb]in/
+[Oo]bj/
+artifacts/
+publish/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.binlog
+*.nupkg
+*.snupkg
+*.pdb
+
+# ===== 本地运行数据 / 日志（PASTEUP_DATA 指到仓库内时）=====
+data/
+logs/
+*.log
+*.tmp
+*.corrupt
+
+# ===== 工具会话状态（计划 / 沙箱 / 临时 SDK 状态，不入库）=====
+.JCODE/
+
+# ===== 本地开发文档 / 规则（任务记录 / 报错 / 规则 / 原型 / 截图 / AGENTS.md，不随仓库分发）=====
+/docs/
+/AGENTS.md
+
+# ===== IDE / 编辑器 =====
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+*.sln.docstates
+
+# ===== 系统杂项 =====
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ===== Python 工具（scripts/make_icon.py 等）=====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+pip-*/
+.pytest_cache/
+
+# ===== 敏感 / 签名文件 =====
+*.pfx
+*.snk
+*.p12
+.env
+.env.*
+!.env.example
