@@ -7,6 +7,9 @@
     <WarningLevel>5</WarningLevel>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 产品版本（2026-11-14）：便携版 exe 的 ProductVersion/FileVersion 与设置页「关于」均取自此值；
+         GitHub Release 的版本号与 zip 名由 exe ProductVersion 派生（scripts/publish-portable.ps1）。 -->
+    <Version>0.1.0</Version>
     <!-- NuGet lockfile（2026-11-10 复审其他#13 / P3-3）：直接依赖版本虽已钉死，传递依赖仍由 nuspec
          范围在还原时浮动解析 → 构建不可复现、也无法做依赖基线审计。开启后首次 restore 为各项目生成
          packages.lock.json（由维护者提交、CI 用它校验还原结果）。刻意不开 RestoreLockedMode：

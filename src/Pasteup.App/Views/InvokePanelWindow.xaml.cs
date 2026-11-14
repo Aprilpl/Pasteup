@@ -164,6 +164,14 @@ public partial class InvokePanelWindow : Window
         // 快速首落位：只跑本进程廉价调用（native caret / 鼠标），用既有数学一次算好；
         // 跨进程探针没命中时把采集上下文交出来，Show 之后异步精修
         var caretPlaced = PlaceNearAnchorInitial(out var asyncContext);
+        // 2026-11-13 根因修复：UIA 的全局焦点元素必须在**面板 Show 之前**快照——Show/Activate 之后
+        // 全局焦点已经变成面板自己的 WPF 元素（pid 不匹配），此后才问 GetFocusedElement 只能退回
+        // 「窗口里第一个 TextPattern 后代」（Chrome 下永远是地址栏 → 面板每次固定落位）。
+        // 快照只等 <=CaptureTimeoutMs（UIA 线程启动即预热，热查询实机 1–3ms），失败/超时即放弃。
+        Services.CaretHit? preCaret = null;
+        var preCaptureTrace = "";
+        if (!caretPlaced && asyncContext is not null)
+            preCaret = CaptureFocusedCaretBeforeShow(asyncContext, out preCaptureTrace);
         ViewModel.IsPanelVisible = true; // 先开闸再刷新：本次唤起必见最新数据
         ViewModel.RefreshFromEngine();
         // 唤起回顶（设置可关）：重置必须在 RefreshFromEngine 版本门控之外——引擎未变时
@@ -183,18 +191,79 @@ public partial class InvokePanelWindow : Window
         // 面板可见但拿不到键盘焦点（2026-11-02 实机冒烟实锤）。异步抢前台——阶梯里有 8×20ms
         // 与 Alt 点放 4 轮的等待，绝不能再同步睡 UI 线程（同步版最坏 ≈1.04s，面板已 Show 却白块冻住）
         if (!IsActive) _ = TryRestoreForegroundAsync();
-        // 首落位没用上 caret（native 无命中 → 鼠标兜底）：面板已经可见可输入，慢的 UIA→MSAA
-        // 交给专用 STA 探针线程跑，命中后回 UI 用真实尺寸微调位置（生成号 + IsVisible 守卫）
-        if (!caretPlaced && asyncContext is not null)
-            _ = RefineCaretPlacementAsync(asyncContext, generation);
+        // 首落位没用上 caret：有 Show 前快照就只按真实尺寸复核位置（零跨进程调用）；
+        // 没有快照才跑慢的 UIA→MSAA 异步精修（内部已用「窗口内 HasKeyboardFocus 元素」兜底）。
+        if (!caretPlaced)
+        {
+            if (preCaret is { } pre) RefineWithCapturedCaret(pre, generation);
+            else if (asyncContext is not null)
+                _ = RefineCaretPlacementAsync(asyncContext, preCaptureTrace, generation);
+        }
+    }
+
+    /// <summary>
+    /// Show 前的 UIA 焦点快照（2026-11-13 固定落位根因修复）：只读一次全局焦点元素的 TextPattern caret，
+    /// pid 必须命中唤起前的前台进程。成功即用真实 caret 先把窗口摆好（用户看到的第一帧就在锚点旁，
+    /// 不再先出现在鼠标处再跳）；校验复用 <see cref="Services.CaretAcquisition.Validate"/> 的三层规则。
+    /// 失败/超时/线程忙时不阻塞唤起，trace 交给 Show 后的兜底精修一起写进 placement.log。
+    /// </summary>
+    private Services.CaretHit? CaptureFocusedCaretBeforeShow(Services.CaretProbeContext context,
+        out string trace)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        if (!Services.UiaCaretProbeThread.Shared.TryCaptureFocusedCaret(context, out var raw, out var why))
+        {
+            trace = $"precapture-fail:{why} ({sw.ElapsedMilliseconds}ms)";
+            return null;
+        }
+
+        var hit = Services.CaretAcquisition.Validate(context, Services.CaretSource.Uia, raw, why, out var reject);
+        if (hit is null)
+        {
+            // 拒绝也带上探针明细（focused(ct/class) + 原始 rect）：空输入框/假 caret 这类问题
+            // 只看 "size 721x35" 无法定位是哪个元素报的（2026-11-14）
+            trace = $"precapture-reject:{reject} why:[{why}] ({sw.ElapsedMilliseconds}ms)";
+            return null;
+        }
+
+        trace = $"precapture:ok:{why} ({sw.ElapsedMilliseconds}ms)";
+        var cursor = Services.Win32Input.GetCursorPos();
+        var cursorMonitor = Monitors.ContainingPhysicalPoint(cursor.X, cursor.Y) ?? Monitors.Primary();
+        if (cursorMonitor is null) return hit;
+        Services.Win32Input.TryGetWindowRect(_pasteTarget, out var fgRect);
+        ApplyPlacement(cursorMonitor, cursor, fgRect, hit, trace, "precapture");
+        return hit;
+    }
+
+    /// <summary>
+    /// Show 之后用真实窗口尺寸把「Show 前快照」算出的位置再校一次（无跨进程查询，成本≈0）。
+    /// 排到 Loaded 优先级：此时布局已完成，ActualWidth/Height 才是最终值。
+    /// </summary>
+    private void RefineWithCapturedCaret(Services.CaretHit hit, int generation)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            // 生成号/可见性守卫：迟到的回调不得把新一轮面板挪走，面板已藏也丢弃
+            if (generation != _placementGeneration || !IsVisible) return;
+            var caretPoint = hit.Caret;
+            if (Monitors.ContainingPhysicalPoint(
+                    (caretPoint.Left + caretPoint.Right) / 2, (caretPoint.Top + caretPoint.Bottom) / 2) is null)
+                return;
+            var cursor = Services.Win32Input.GetCursorPos();
+            var cursorMonitor = Monitors.ContainingPhysicalPoint(cursor.X, cursor.Y) ?? Monitors.Primary();
+            if (cursorMonitor is null) return;
+            Services.Win32Input.TryGetWindowRect(_pasteTarget, out var fgRect);
+            ApplyPlacement(cursorMonitor, cursor, fgRect, hit, hit.Detail, "refine");
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     /// <summary>
     /// 快速首落位（UI 线程，只做本进程廉价调用）：native 系统 caret（GetGUIThreadInfo，微秒级）
     /// → 鼠标指针；取到 caret 就按 caret 数学落位，否则鼠标锚点落位。UIA/MSAA 不在这里跑
-    /// ——它们跨进程，UIA 有 150ms 等待、MSAA 可挂起，留给面板可见后的
-    /// <see cref="RefineCaretPlacementAsync"/>（异步交给 UiaCaretProbeThread 的专用 STA 探针线程，
-    /// 先可见、后精确，复审问题1）。
+    /// ——它们跨进程，UIA 有 150ms 等待、MSAA 可挂起。跨进程查询分两条：
+    /// ① Show **之前**只做一次「UIA 全局焦点快照」（<see cref="CaptureFocusedCaretBeforeShow"/>，25ms 上限，
+    ///    这是 Chrome/Electron 自绘光标最可靠的来源——Show 后全局焦点就变成面板自己）；
+    /// ② 快照失败时，Show 之后才走 <see cref="RefineCaretPlacementAsync"/> 的完整异步链兜底。
     /// 返回 true = 首落位用上了 caret；asyncContext = 需要异步精修时的采集上下文（否则 null）。
     /// </summary>
     private bool PlaceNearAnchorInitial(out Services.CaretProbeContext? asyncContext)
@@ -294,14 +363,17 @@ public partial class InvokePanelWindow : Window
     }
 
     /// <summary>
-    /// Show 之后的异步精修：首落位没用上 caret 时，补跑 UIA→MSAA 跨进程探针，命中后回 UI 线程
+    /// Show 之后的异步精修（Show 前快照失败时才走这里）：补跑 UIA→MSAA 跨进程探针，命中后回 UI 线程
     /// 用真实窗口尺寸重算并 SetWindowPosition。探针在 <see cref="Services.UiaCaretProbeThread"/> 的
     /// 专用 STA 线程上串行执行（UIA 与 MSAA 同一 STA 上下文；整链最多等 200ms，超时即放弃、保持
     /// 鼠标锚点），这里只 await——不占 UI 线程、也不占线程池（复审问题1 收尾）。
+    /// 注意此时**全局焦点已是面板自己**，UIA 探针内部走「窗口内 HasKeyboardFocus 元素」兜底
+    ///（2026-11-13）；<paramref name="preCaptureTrace"/> 是 Show 前快照的失败原因，拼进日志便于诊断。
     /// 生成号不匹配（用户已再次唤起）或面板已隐藏则丢弃结果（精修只服务本轮唤起）。
     /// 注意：WPF 的 ActualWidth/Height 只能在 UI 线程读，故 await 续回 UI 后才做落位数学。
     /// </summary>
-    private async Task RefineCaretPlacementAsync(Services.CaretProbeContext context, int generation)
+    private async Task RefineCaretPlacementAsync(Services.CaretProbeContext context,
+        string preCaptureTrace, int generation)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         Services.CaretHit? hit;
@@ -319,9 +391,20 @@ public partial class InvokePanelWindow : Window
             trace = "exception:" + ex.GetType().Name + $" ({sw.ElapsedMilliseconds}ms)";
         }
 
+        // 保留 Show 前快照的失败原因：一眼能看出是「快照没拿到」才退到 Show 后的兜底链路
+        if (preCaptureTrace.Length > 0) trace = preCaptureTrace + "; " + trace;
+
         // await 已续回 UI 线程：生成号/可见性守卫——迟到的结果不得把新一轮面板挪走，
-        // 用户已关闭面板时也丢弃
-        if (generation != _placementGeneration || !IsVisible || hit is not { } h) return;
+        // 用户已关闭面板时也丢弃（这类丢弃不记日志，避免噪音）
+        if (generation != _placementGeneration || !IsVisible) return;
+        if (hit is not { } h)
+        {
+            // 快照失败 + 兜底链也没命中：补一行 miss（既有实现此处静默，导致「为什么退回鼠标」
+            // 在 placement.log 里不可见；2026-11-13 独立复核建议）
+            PlacementLog($"summon fg={_pasteTarget} mode={App.Current.Settings.AnchorMode} " +
+                         $"source=none trace=[{trace}] phase=refine-miss");
+            return;
+        }
         // 命中但 caret 中心不在任何显示器上（跨屏拖拽/假坐标瞬态）：不值得为它挪面板，保持首落位
         var caretPoint = h.Caret;
         if (Monitors.ContainingPhysicalPoint(

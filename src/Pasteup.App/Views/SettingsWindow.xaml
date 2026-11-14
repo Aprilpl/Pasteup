@@ -190,7 +190,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="全局热键" Style="{StaticResource SecTitle}"/>
-                                    <TextBlock Text="点击右侧胶囊后直接按下新组合键；与其他程序冲突时不会生效。" Style="{StaticResource SecDesc}" Margin="0,7,28,0"/>
+                                    <TextBlock Text="点击右侧胶囊后直接按下新组合键（支持 Ctrl / Alt / Shift / Win + 字母等组合）；与其他程序冲突时不会生效。" Style="{StaticResource SecDesc}" Margin="0,7,28,0"/>
                                 </StackPanel>
                                 <Border Background="{DynamicResource PanelBrush}" CornerRadius="{DynamicResource CardRadius}"
                                         Padding="16,4" Grid.Column="1">

@@ -18,7 +18,9 @@ namespace Pasteup.App.Services;
 /// · <see cref="ProbeAsync"/>：异步全链 UIA→MSAA，尺寸/焦点控件/在屏校验全部复用
 ///   <see cref="CaretAcquisition.TryAcquire"/>，不重写；
 /// · <see cref="TryGet"/>：既有同步 UIA-only 查询（供 <see cref="UiaCaretProbe"/> / `--poc=caret` /
-///   <see cref="CaretAcquisition.DefaultProbes"/> 使用），行为与线程语义保持不变。
+///   <see cref="CaretAcquisition.DefaultProbes"/> 使用），行为与线程语义保持不变；
+/// · <see cref="TryCaptureFocusedCaret"/>：面板 Show **前**的全局焦点快照（2026-11-13），
+///   解决「Show 之后全局焦点已变成面板自己」导致 Chrome 固定落位的问题。
 /// </summary>
 internal sealed class UiaCaretProbeThread
 {
@@ -30,6 +32,12 @@ internal sealed class UiaCaretProbeThread
 
     /// <summary>异步全链（UIA→MSAA）默认等待上限（毫秒）。</summary>
     internal const int AsyncProbeTimeoutMs = 200;
+
+    /// <summary>
+    /// 「Show 前焦点快照」的等待上限（毫秒）。只查一次 UIA 全局焦点元素（热查询实机 1–3ms），
+    /// 超时即放弃、绝不为了一次精修把面板唤起拖到肉眼可感（2026-11-13）。
+    /// </summary>
+    internal const int CaptureTimeoutMs = 25;
 
     private readonly object _gate = new();
     private Thread? _thread;
@@ -53,10 +61,15 @@ internal sealed class UiaCaretProbeThread
     private string _detail = "";
 
     /// <summary>一次探针请求。同步请求 = UIA-only 原始结果（写回 <see cref="_rect"/>/<see cref="_detail"/>）；
-    /// 异步请求 = 全链结果经 <see cref="Completion"/> 交回。</summary>
+    /// 异步请求 = 全链结果经 <see cref="Completion"/> 交回；快照请求 = 全局焦点元素的 TextPattern
+    /// caret（写回同一结果槽，Show 之前调用）。</summary>
     private sealed class ProbeRequest
     {
         public bool Async { get; init; }
+
+        /// <summary>Show 前的「全局焦点元素」快照（只读 UIA、校验 pid）。</summary>
+        public bool Capture { get; init; }
+
         public CaretProbeContext? Context { get; init; }
         public IntPtr ForegroundWindow { get; init; }
         public int ForegroundPid { get; init; }
@@ -184,6 +197,56 @@ internal sealed class UiaCaretProbeThread
         return await completion.Task;
     }
 
+    /// <summary>
+    /// 面板 Show **之前**的「焦点快照」：只查一次 UIA 全局焦点元素的 TextPattern caret，
+    /// pid 必须等于前台进程。为什么必须在 Show 前：面板一旦激活，全局焦点就是面板自己的
+    /// WPF 元素（pid 不匹配），Chrome 地址栏这类「浏览器 UI 焦点」在窗口失活后也不再报
+    /// HasKeyboardFocus（2026-11-13 实机：网页内焦点能找回、地址栏焦点找不回）——
+    /// 只有 Show 前的快照能覆盖全部场景。等待上限 <see cref="CaptureTimeoutMs"/>，超时即放弃。
+    /// 结果**未经**尺寸/焦点控件/在屏校验，调用方用 <see cref="CaretAcquisition.Validate"/> 校验。
+    /// </summary>
+    public bool TryCaptureFocusedCaret(CaretProbeContext context, out Win32Input.PhysicalRect caret,
+        out string why)
+    {
+        caret = default;
+        if (!EnsureStarted(0, out why)) return false;
+        if (_busy)
+        {
+            why = "busy-skip";
+            return false;
+        }
+
+        lock (_gate)
+        {
+            if (_busy)
+            {
+                why = "busy-skip";
+                return false;
+            }
+            _busy = true;
+            _current = new ProbeRequest
+            {
+                Capture = true,
+                ForegroundPid = (int)Win32Input.ProcessIdOfWindow(context.ForegroundWindow),
+            };
+            _done!.Reset();
+        }
+
+        _request!.Set();
+        if (!_done!.Wait(CaptureTimeoutMs))
+        {
+            why = $"capture-timeout-{CaptureTimeoutMs}ms";
+            return false;
+        }
+
+        lock (_gate)
+        {
+            caret = _rect;
+            why = _detail;
+            return _hasResult;
+        }
+    }
+
     private bool EnsureStarted(int waitReadyMs, out string why)
     {
         why = "";
@@ -257,7 +320,8 @@ internal sealed class UiaCaretProbeThread
                     }
                     if (request is not null)
                     {
-                        if (request.Async) RunAsyncProbe(request);
+                        if (request.Capture) RunCapture(request);
+                        else if (request.Async) RunAsyncProbe(request);
                         else RunSyncProbe(request);
                     }
                 }
@@ -280,6 +344,33 @@ internal sealed class UiaCaretProbeThread
         {
             ok = UiaTextCaret.TryReadCaret(_uia, request.ForegroundWindow, request.ForegroundPid, out rect,
                 out detail);
+        }
+        catch (Exception ex)
+        {
+            ok = false;
+            rect = default;
+            detail = "exception:" + ex.GetType().Name + ":" + ex.Message;
+        }
+
+        lock (_gate)
+        {
+            _hasResult = ok;
+            _rect = rect;
+            _detail = detail;
+            _busy = false;
+        }
+        _done!.Set();
+    }
+
+    /// <summary>Show 前快照请求：只读全局焦点元素（pid 校验在 UiaTextCaret 内），结果写回结果槽。</summary>
+    private void RunCapture(ProbeRequest request)
+    {
+        bool ok;
+        Win32Input.PhysicalRect rect = default;
+        string detail;
+        try
+        {
+            ok = UiaTextCaret.TryReadFocusedCaret(_uia, request.ForegroundPid, out rect, out detail);
         }
         catch (Exception ex)
         {

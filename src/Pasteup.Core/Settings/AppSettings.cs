@@ -15,9 +15,14 @@ public enum PanelAnchorMode { Caret = 0, Cursor = 1 }
 
 public sealed class AppSettings
 {
+    // 默认热键：录制失效（2026-11-13 修复）时可能落盘非法组合（如「Ctrl+VKA2」= 把修饰键本身当主键），
+    // 加载时据此回退。集中成常量，属性默认值与 SanitizeHotkeys 共用，避免两处漂移。
+    public const string DefaultInvokeHotkey = "Alt+V";
+    public const string DefaultScreenshotHotkey = "Alt+S";
+
     public ThemeMode Theme { get; set; } = ThemeMode.System;
-    public string InvokeHotkey { get; set; } = "Alt+V";
-    public string ScreenshotHotkey { get; set; } = "Alt+S";
+    public string InvokeHotkey { get; set; } = DefaultInvokeHotkey;
+    public string ScreenshotHotkey { get; set; } = DefaultScreenshotHotkey;
     public bool PasteOnEnter { get; set; } = true;
     public bool SummonResetToTop { get; set; } = true;
     public PanelAnchorMode AnchorMode { get; set; } = PanelAnchorMode.Caret;
@@ -36,6 +41,18 @@ public sealed class AppSettings
 
     public KeyCombo? InvokeHotkeyCombo => KeyCombo.Parse(InvokeHotkey);
     public KeyCombo? ScreenshotHotkeyCombo => KeyCombo.Parse(ScreenshotHotkey);
+
+    /// <summary>
+    /// 把无法解析的热键串回退为默认值、其余设置原样保留。
+    /// 只为旧录制 bug 的遗留数据兜底（修复前按 Ctrl 会被录成「Ctrl+VKA2」这类非法组合并落盘）；
+    /// 与 IsValid 的「整体回退」区分开：热键是用户可达的坏状态，不值得连主题/容量/窗口尺寸一起丢。
+    /// 空串/null 同样回退（Parse 返回 null）。
+    /// </summary>
+    public void SanitizeHotkeys()
+    {
+        if (InvokeHotkeyCombo is null) InvokeHotkey = DefaultInvokeHotkey;
+        if (ScreenshotHotkeyCombo is null) ScreenshotHotkey = DefaultScreenshotHotkey;
+    }
 
     public bool IsValid() =>
         InvokeHotkeyCombo is not null
@@ -67,7 +84,9 @@ public sealed class SettingsStore(string dataDirectory)
         {
             if (!File.Exists(SettingsPath)) return new AppSettings();
             var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOpts);
-            if (s is null || !s.IsValid()) return new AppSettings();
+            if (s is null) return new AppSettings();
+            s.SanitizeHotkeys(); // 旧录制 bug 遗留的非法热键只回退热键字段，不整体丢设置
+            if (!s.IsValid()) return new AppSettings();
             return s;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

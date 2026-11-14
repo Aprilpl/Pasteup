@@ -67,8 +67,42 @@ public class AppSettingsValidationTests
         }
     }
 
-    private static string TempDir()
+    [Fact]
+    public void Load_with_legacy_invalid_hotkey_resets_only_hotkeys_not_other_settings()
     {
+        var dir = TempDir();
+        try
+        {
+            // 2026-11-13 修复前的遗留形态：按 Ctrl 的 KeyDown 被录成「Ctrl+VKA2」并落盘。
+            // 只回退热键字段，主题/容量等其他设置必须保留（旧行为是 IsValid 失败 → 整档回默认）。
+            File.WriteAllText(Path.Combine(dir, "settings.json"),
+                "{\"Theme\":2,\"InvokeHotkey\":\"Ctrl+VKA2\",\"ScreenshotHotkey\":\"Ctrl+VKA3\",\"HistoryCapacity\":321}");
+            var loaded = new SettingsStore(dir).Load();
+
+            Assert.Equal(AppSettings.DefaultInvokeHotkey, loaded.InvokeHotkey);
+            Assert.Equal(AppSettings.DefaultScreenshotHotkey, loaded.ScreenshotHotkey);
+            Assert.Equal(ThemeMode.Dark, loaded.Theme);
+            Assert.Equal(321, loaded.HistoryCapacity);
+            Assert.True(loaded.IsValid());
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
+    [Fact]
+    public void SanitizeHotkeys_keeps_valid_custom_hotkeys()
+    {
+        var s = new AppSettings { InvokeHotkey = "Ctrl+J", ScreenshotHotkey = "Alt+J" };
+
+        s.SanitizeHotkeys();
+
+        Assert.Equal("Ctrl+J", s.InvokeHotkey);
+        Assert.Equal("Alt+J", s.ScreenshotHotkey);
+    }
+
+    private static string TempDir()    {
         var dir = Path.Combine(Path.GetTempPath(), "pasteup-settings-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         return dir;

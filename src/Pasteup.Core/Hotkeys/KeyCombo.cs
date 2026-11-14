@@ -79,6 +79,24 @@ public sealed record KeyCombo(KeyModifiers Modifiers, int VirtualKey)
         map["Plus"] = 0xBB;      // =
         map["Comma"] = 0xBC;
         map["Period"] = 0xBE;
+        // 标点/数字小键盘（2026-11-13 补）：录制会接受这些主键，名称必须能 Parse 回同一 VK，
+        // 否则 ToString 落盘成「Ctrl+VKBA」这类不可解析串，热键静默失效（录制→保存→注册闭环断裂）。
+        map["Semicolon"] = 0xBA;    // ;
+        map["Slash"] = 0xBF;        // /
+        map["LeftBracket"] = 0xDB;  // [
+        map["Backslash"] = 0xDC;    // \
+        map["RightBracket"] = 0xDD; // ]
+        map["Quote"] = 0xDE;        // '
+        map["Oem102"] = 0xE2;       // 102 键盘的 \（部分布局）
+        for (int n = 0; n <= 9; n++) map[$"Numpad{n}"] = 0x60 + n;
+        map["NumpadMultiply"] = 0x6A;
+        map["NumpadAdd"] = 0x6B;
+        map["NumpadSubtract"] = 0x6D;
+        map["NumpadDecimal"] = 0x6E;
+        map["NumpadDivide"] = 0x6F;
+        map["CapsLock"] = 0x14;
+        map["NumLock"] = 0x90;
+        map["Menu"] = 0x5D;      // 上下文菜单键
         return map;
     }
 }

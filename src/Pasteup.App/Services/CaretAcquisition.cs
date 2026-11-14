@@ -56,6 +56,32 @@ public static class CaretValidation
     public static bool SizeLooksLikeCaret(int width, int height) =>
         width is >= 0 and <= MaxCaretWidth && height is >= MinCaretHeight and <= MaxCaretHeight;
 
+    /// <summary>
+    /// 「宽选区」能否当作整行/整框锚点（2026-11-14 修 Chrome 空输入框固定跟鼠标）：
+    /// Chrome/Electron 对**空输入框**或整行选区有时把 TextPattern 选区矩形报成元素自身的矩形
+    ///（实测 B 站搜索框 721×35 与元素矩形完全一致、DSH 输入行 2228×63 落在文档矩形内），
+    /// 细光标尺寸校验会拒绝它 → 面板退回鼠标。本判据只放行「高度像一行、且矩形落在该元素矩形内
+    ///（±2px）」的宽矩形；整窗矩形、屏幕外、与元素矩形不符的假 caret 仍被拒绝。
+    /// </summary>
+    public static bool LooksLikeLineBoxAnchor(Win32Input.PhysicalRect selection,
+        Win32Input.PhysicalRect elementBounds, int tolerance = FocusTolerance) =>
+        selection.Width > MaxCaretWidth
+        && selection.Height is >= MinCaretHeight and <= MaxCaretHeight
+        && selection.Left >= elementBounds.Left - tolerance
+        && selection.Top >= elementBounds.Top - tolerance
+        && selection.Right <= elementBounds.Right + tolerance
+        && selection.Bottom <= elementBounds.Bottom + tolerance;
+
+    /// <summary>
+    /// 「元素矩形」能否当作「拿不到 caret 的焦点输入框」的左上角锚点（2026-11-14 修 Notepad 查找框）：
+    /// WinUI TextBox（如 Win11 记事本 Ctrl+F 的「查找」框）在空选区时 TextPattern 返回 **0 个 range**，
+    /// 完全拿不到插入光标矩形；但元素本身是焦点 Edit，其左上角就是用户期待的「输入框光标位置」。
+    /// 仅接受高度像一行/一个输入框的矩形；整窗/整页/非编辑控件不受影响。
+    /// </summary>
+    public static bool LooksLikeInputBoxAnchor(Win32Input.PhysicalRect elementBounds) =>
+        elementBounds.Width > MaxCaretWidth
+        && elementBounds.Height is >= MinCaretHeight and <= MaxCaretHeight;
+
     /// <summary>caret 是否落在焦点控件矩形内（含容差）。</summary>
     public static bool InsideFocus(Win32Input.PhysicalRect caret, Win32Input.PhysicalRect focus,
         int tolerance = FocusTolerance) =>
@@ -123,35 +149,53 @@ public static class CaretAcquisition
                 continue;
             }
 
-            var width = caret.Width;
-            var height = caret.Height;
-            if (!CaretValidation.SizeLooksLikeCaret(width, height))
+            var hit = Validate(context, probe.Source, caret, why, out var reject);
+            if (hit is null)
             {
-                Append(sb, probe.Source, $"reject:size {width}x{height}");
+                // 拒绝也带探针明细：placement.log 里才能看出「哪个元素/哪条路径」被拒（2026-11-14）
+                Append(sb, probe.Source, "reject:" + reject + (string.IsNullOrEmpty(why) ? "" : " why:" + why));
                 continue;
             }
 
-            if (context.FocusWindowRect is { } focus && !CaretValidation.InsideFocus(caret, focus))
-            {
-                Append(sb, probe.Source, $"reject:outside-focus caret={Fmt(caret)} focus={Fmt(focus)}");
-                continue;
-            }
-
-            var cx = (caret.Left + caret.Right) / 2;
-            var cy = (caret.Top + caret.Bottom) / 2;
-            if (!context.IsOnAnyMonitor(cx, cy))
-            {
-                Append(sb, probe.Source, $"reject:off-monitor center=({cx},{cy})");
-                continue;
-            }
-
-            Append(sb, probe.Source, "ok");
+            Append(sb, probe.Source, string.IsNullOrEmpty(why) ? "ok" : "ok:" + why);
             trace = sb.ToString();
-            return new CaretHit(caret, probe.Source, why);
+            return hit;
         }
 
         trace = sb.ToString();
         return null;
+    }
+
+    /// <summary>
+    /// 对一条原始 caret 采样做校验：①尺寸像一根插入光标；②在焦点控件矩形内（±2px）；③中心在显示器上。
+    /// 采集链与「Show 前的焦点快照」（<see cref="UiaCaretProbeThread.TryCaptureFocusedCaret"/>）共用，
+    /// 纯函数便于单测；失败返回 null 并给出可写进 placement.log 的原因。
+    /// </summary>
+    public static CaretHit? Validate(CaretProbeContext context, CaretSource source,
+        Win32Input.PhysicalRect caret, string detail, out string reject)
+    {
+        reject = "";
+        if (!CaretValidation.SizeLooksLikeCaret(caret.Width, caret.Height))
+        {
+            reject = $"size {caret.Width}x{caret.Height}";
+            return null;
+        }
+
+        if (context.FocusWindowRect is { } focus && !CaretValidation.InsideFocus(caret, focus))
+        {
+            reject = $"outside-focus caret={Fmt(caret)} focus={Fmt(focus)}";
+            return null;
+        }
+
+        var cx = (caret.Left + caret.Right) / 2;
+        var cy = (caret.Top + caret.Bottom) / 2;
+        if (!context.IsOnAnyMonitor(cx, cy))
+        {
+            reject = $"off-monitor center=({cx},{cy})";
+            return null;
+        }
+
+        return new CaretHit(caret, source, detail);
     }
 
     private static void Append(System.Text.StringBuilder sb, CaretSource source, string note)

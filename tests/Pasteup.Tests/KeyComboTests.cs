@@ -33,6 +33,19 @@ public class KeyComboParseTests
     [InlineData("Ctrl+Plus", "Ctrl+Plus")]
     [InlineData("Ctrl+Comma", "Ctrl+Comma")]
     [InlineData("Ctrl+Period", "Ctrl+Period")]
+    [InlineData("Ctrl+Semicolon", "Ctrl+Semicolon")]
+    [InlineData("Ctrl+Slash", "Ctrl+Slash")]
+    [InlineData("Ctrl+LeftBracket", "Ctrl+LeftBracket")]
+    [InlineData("Ctrl+Backslash", "Ctrl+Backslash")]
+    [InlineData("Ctrl+RightBracket", "Ctrl+RightBracket")]
+    [InlineData("Ctrl+Quote", "Ctrl+Quote")]
+    [InlineData("Ctrl+Oem102", "Ctrl+Oem102")]
+    [InlineData("Ctrl+Numpad0", "Ctrl+Numpad0")]
+    [InlineData("Ctrl+Numpad9", "Ctrl+Numpad9")]
+    [InlineData("Ctrl+NumpadDivide", "Ctrl+NumpadDivide")]
+    [InlineData("Alt+CapsLock", "Alt+CapsLock")]
+    [InlineData("Alt+NumLock", "Alt+NumLock")]
+    [InlineData("Alt+Menu", "Alt+Menu")]
     [InlineData("Shift+Ctrl+Alt+Win+Q", "Ctrl+Alt+Shift+Win+Q")]
     public void Parses_and_normalizes(string input, string expected)
     {
@@ -74,11 +87,31 @@ public class KeyComboParseTests
     [InlineData("Ctrl+S", KeyModifiers.Control, 0x53)]
     [InlineData("Ctrl+Shift+P", KeyModifiers.Control | KeyModifiers.Shift, 0x50)]
     [InlineData("Win+PrintScreen", KeyModifiers.Win, 0x2C)]
+    [InlineData("Ctrl+Semicolon", KeyModifiers.Control, 0xBA)]
+    [InlineData("Ctrl+Slash", KeyModifiers.Control, 0xBF)]
+    [InlineData("Ctrl+Backslash", KeyModifiers.Control, 0xDC)]
+    [InlineData("Ctrl+Quote", KeyModifiers.Control, 0xDE)]
+    [InlineData("Ctrl+Numpad7", KeyModifiers.Control, 0x67)]
+    [InlineData("Ctrl+NumpadDecimal", KeyModifiers.Control, 0x6E)]
+    [InlineData("Ctrl+Oem102", KeyModifiers.Control, 0xE2)]
+    [InlineData("Ctrl+Menu", KeyModifiers.Control, 0x5D)]
     public void Win32_values_are_correct(string text, KeyModifiers mods, int vk)
     {
         var combo = KeyCombo.Parse(text)!;
         Assert.Equal(mods, combo.Modifiers);
         Assert.Equal(vk, combo.VirtualKey);
+    }
+
+    [Theory]
+    [InlineData("Ctrl+Semicolon")]
+    [InlineData("Ctrl+Numpad1")]
+    [InlineData("Ctrl+Backslash")]
+    [InlineData("Ctrl+Alt+Shift+Quote")]
+    public void ToString_round_trips_through_parse(string text)
+    {
+        var combo = KeyCombo.Parse(text)!;
+        Assert.Equal(combo, KeyCombo.Parse(combo.ToString()));
+        Assert.Equal(text, combo.ToString());
     }
 
     [Fact]
