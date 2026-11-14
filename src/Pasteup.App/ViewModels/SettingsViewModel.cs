@@ -1,4 +1,6 @@
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Pasteup.App.Services;
 using Pasteup.App.Theme;
 using Pasteup.Core.History;
 using Pasteup.Core.Hotkeys;
@@ -25,6 +27,32 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         get => S.SummonResetToTop;
         set { S.SummonResetToTop = value; Save(); OnPropertyChanged(); }
+    }
+
+    /// <summary>开机自启（2026-11-14）：写/删 HKCU Run 项。注册表不可写时弹窗可见化并回弹 UI——
+    /// 设置项只在注册成功后落盘，避免「设置显示已开启、实际开机不会启动」的假成功。</summary>
+    public bool StartWithWindows
+    {
+        get => S.StartWithWindows;
+        set
+        {
+            if (S.StartWithWindows == value) return;
+            try
+            {
+                StartupRegistration.Default.Apply(value, StartupRegistration.CurrentExePath);
+            }
+            catch (Exception ex)
+            {
+                CrashLog.Write("startup-registration", ex, "开机自启启用/关闭失败（注册表不可写）");
+                MessageBox.Show($"开机自启设置失败：{ex.Message}", "Pasteup",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                OnPropertyChanged(); // 回弹：设置未改，复选框复原
+                return;
+            }
+            S.StartWithWindows = value;
+            Save();
+            OnPropertyChanged();
+        }
     }
 
     /// <summary>面板锚点来源（2026-11-10）：Caret 优先贴文本光标、取不到跟鼠标；Cursor 始终跟鼠标。</summary>

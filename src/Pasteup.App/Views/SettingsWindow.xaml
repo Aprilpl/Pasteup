@@ -126,12 +126,13 @@
                                                 <TextBlock Text="主题" Style="{StaticResource RowTitle}"/>
                                                 <TextBlock Text="浅色 = 框中纸 · 深色 = 数据终端" Style="{StaticResource RowDesc}"/>
                                             </StackPanel>
-                                            <!-- 三钮统一 MinWidth=96：按最长文案「跟随系统」（4 字 ≈50px + 左右 Padding 30 + 描边 2）留出余量 -->
-                                            <Button Grid.Column="1" x:Name="ThemeLight" Click="OnThemePick" Tag="opt" Margin="0,0,8,0" MinWidth="96"
+                                            <!-- 三钮统一 MinWidth=96：按最长文案「跟随系统」（4 字 ≈50px + 左右 Padding 30 + 描边 2）留出余量；
+                                                 选中色不在 XAML 里写死，由 SyncThemeButtons → SetSeg（SegmentButtons）挂资源引用 -->
+                                            <Button Grid.Column="1" x:Name="ThemeLight" Click="OnThemePick" Margin="0,0,8,0" MinWidth="96"
                                                     Content="浅色"/>
-                                            <Button Grid.Column="2" x:Name="ThemeDark" Click="OnThemePick" Tag="opt" Margin="0,0,8,0" MinWidth="96"
+                                            <Button Grid.Column="2" x:Name="ThemeDark" Click="OnThemePick" Margin="0,0,8,0" MinWidth="96"
                                                     Content="深色"/>
-                                            <Button Grid.Column="3" x:Name="ThemeSystem" Click="OnThemePick" Tag="opt" MinWidth="96"
+                                            <Button Grid.Column="3" x:Name="ThemeSystem" Click="OnThemePick" MinWidth="96"
                                                     Content="跟随系统"/>
                                         </Grid>
                                         <Separator/>
@@ -165,15 +166,29 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="开机自启" Style="{StaticResource RowTitle}"/>
+                                                <TextBlock Text="登录 Windows 后自动在通知区域运行（不弹面板）。" Style="{StaticResource RowDesc}"/>
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="1" Style="{StaticResource SwitchCheckBox}"
+                                                      IsChecked="{Binding Vm.StartWithWindows, Mode=TwoWay}"/>
+                                        </Grid>
+                                        <Separator/>
+                                        <Grid Margin="0,11">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="面板锚点" Style="{StaticResource RowTitle}"/>
                                                 <TextBlock Text="跟随光标 = 贴文本插入光标弹在下方；取不到光标（部分自绘界面）时退回鼠标。" Style="{StaticResource RowDesc}"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" x:Name="AnchorCaret" Click="OnAnchorPick" Tag="opt"
+                                            <!-- 选中色同样由 SetSeg 挂资源引用：主题切换后要跟着换色，不能存旧画刷实例 -->
+                                            <Button Grid.Column="1" x:Name="AnchorCaret" Click="OnAnchorPick"
                                                     Margin="0,0,8,0" MinWidth="96" Content="跟随光标"/>
-                                            <Button Grid.Column="2" x:Name="AnchorCursor" Click="OnAnchorPick" Tag="opt"
+                                            <Button Grid.Column="2" x:Name="AnchorCursor" Click="OnAnchorPick"
                                                     MinWidth="96" Content="跟随鼠标"/>
                                         </Grid>
                                     </StackPanel>
@@ -278,7 +293,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="历史记录" Style="{StaticResource SecTitle}"/>
-                                    <TextBlock Text="容量与保留期同时生效；置顶条目不会被自动清理。" Style="{StaticResource SecDesc}" Margin="0,7,28,0"/>
+                                    <TextBlock Text="容量与保留期同时生效；置顶与收藏条目不会被自动清理。" Style="{StaticResource SecDesc}" Margin="0,7,28,0"/>
                                 </StackPanel>
                                 <Border Background="{DynamicResource PanelBrush}" CornerRadius="{DynamicResource CardRadius}"
                                         Padding="16,4" Grid.Column="1">
@@ -290,7 +305,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="最大条数" Style="{StaticResource RowTitle}"/>
-                                                <TextBlock Text="超出后从最旧端移除（置顶豁免）。" Style="{StaticResource RowDesc}"/>
+                                                <TextBlock Text="超出后从最旧端移除（置顶/收藏豁免）。" Style="{StaticResource RowDesc}"/>
                                             </StackPanel>
                                             <TextBox Grid.Column="1" Style="{StaticResource NumInput}"
                                                      LostFocus="OnCapacityInput" Text="{Binding Vm.HistoryCapacity, Mode=OneWay}"/>
@@ -303,7 +318,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="保留天数" Style="{StaticResource RowTitle}"/>
-                                                <TextBlock Text="到期自动清理非置顶条目。" Style="{StaticResource RowDesc}"/>
+                                                <TextBlock Text="到期自动清理非置顶/收藏条目。" Style="{StaticResource RowDesc}"/>
                                             </StackPanel>
                                             <TextBox Grid.Column="1" Style="{StaticResource NumInput}"
                                                      LostFocus="OnRetentionInput" Text="{Binding Vm.RetentionDays, Mode=OneWay}"/>

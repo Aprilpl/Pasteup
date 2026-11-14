@@ -22,6 +22,7 @@ public partial class App : Application
     private ServiceProvider? _services;
     private Services.SingleInstanceGuard? _instanceGuard;
     private TaskbarIcon? _tray;
+    private MenuItem? _pinListMenu;
     private InvokePanelWindow? _panel;
     private SettingsWindow? _settingsWindow;
     private readonly DispatcherTimer _autosaveTimer;
@@ -175,6 +176,11 @@ public partial class App : Application
         _services = services.BuildServiceProvider();
 
         Settings = SettingsStore.Load();
+        // 开机自启对齐（2026-11-14）：以设置项为准——开启时自愈 exe 路径（便携版换目录/升级后旧值失效），
+        // 关闭时清掉本程序形态的遗留 Run 项（同名但指向其他程序的手工值保留）。best-effort：注册表被
+        // 组策略/权限锁死时不拦启动（只是不能自启），失败记 CrashLog 供排查；设置页开关另有可见化弹窗。
+        try { StartupRegistration.Default.Reconcile(Settings.StartWithWindows, StartupRegistration.CurrentExePath); }
+        catch (Exception ex) { CrashLog.Write("startup-registration", ex, "开机自启注册表对齐失败（忽略）"); }
         History.Capacity = Settings.HistoryCapacity;
         History.RetentionDays = Settings.RetentionDays;
         History.Load(Store.Load());
@@ -312,6 +318,18 @@ public partial class App : Application
             ToolTipText = $"Pasteup — {invoke} 唤起 · {shot} 截图",
             Icon = AppIcon.LoadTrayIcon(),
         };
+        _tray.ContextMenu = BuildTrayMenu();
+        _tray.TrayLeftMouseUp += (_, _) => ShowPanel();
+        // TaskbarIcon 的 Create() 只挂在 WPF Loaded 事件上；本对象纯代码创建、永不挂可视树，
+        // 不显式 ForceCreate 则托盘图标从未真正注册（2026-10-27 起的隐性 bug，2026-11-01 由气泡异常暴露）。
+        // Efficiency Mode 会节流后台计时器，保持关闭。
+        _tray.ForceCreate(enablesEfficiencyMode: false);
+    }
+
+    /// <summary>托盘右键菜单装配。单独成方法：POC 闸门 --poc=tray-menu 走同一条构建路径验证
+    /// 「贴图列表」子菜单，避免验证代码与真实菜单逻辑分叉（2026-11-14）。</summary>
+    internal System.Windows.Controls.ContextMenu BuildTrayMenu()
+    {
         var menu = new System.Windows.Controls.ContextMenu();
         void Add(string header, RoutedEventHandler click, bool separator = false)
         {
@@ -322,15 +340,70 @@ public partial class App : Application
         }
         Add("唤起面板", (_, _) => ShowPanel());
         Add("截图", (_, _) => ScreenshotService.BeginCapture());
-        Add("贴图列表", (_, _) => MessageBox.Show($"当前贴图 {Pins.Count} 张", "Pasteup"));
+        // 「贴图列表」= 当前打开的贴图窗口（Alt+S 截图生成、钉在屏幕上、不入历史）的集中入口。
+        // 贴图是瞬时状态且无标题，只能在菜单展开时实时枚举；见 RebuildPinListMenu。
+        _pinListMenu = new MenuItem { Header = PinListText.Title };
+        menu.Items.Add(_pinListMenu);
+        // 在上下文菜单打开时重建（而非二级菜单展开时）：右键落定即已构建完，展开二级菜单无空帧
+        menu.Opened += (_, _) => RebuildPinListMenu();
         Add("设置", (_, _) => ShowSettings(), separator: true);
         Add("退出", (_, _) => { IsExiting = true; Shutdown(); }, separator: true);
-        _tray.ContextMenu = menu;
-        _tray.TrayLeftMouseUp += (_, _) => ShowPanel();
-        // TaskbarIcon 的 Create() 只挂在 WPF Loaded 事件上；本对象纯代码创建、永不挂可视树，
-        // 不显式 ForceCreate 则托盘图标从未真正注册（2026-10-27 起的隐性 bug，2026-11-01 由气泡异常暴露）。
-        // Efficiency Mode 会节流后台计时器，保持关闭。
-        _tray.ForceCreate(enablesEfficiencyMode: false);
+        return menu;
+    }
+
+    /// <summary>
+    /// 托盘「贴图列表」子菜单：按 PinCoordinator 当前打开的贴图窗口实时重建。
+    /// 贴图窗口没有标题、也不持久化（关掉即散），只能用「打开顺序 + 原始物理尺寸 + 缩略图」辨认；
+    /// 点击一项 = 把该贴图激活置前，末尾「全部关闭」一次收掉。0 张时给一行禁用提示——
+    /// 原来的占位实现只弹「当前贴图 N 张」的系统 MessageBox（2026-11-14 前），看起来像坏掉的空壳。
+    /// </summary>
+    private void RebuildPinListMenu()
+    {
+        if (_pinListMenu is null) return;
+        var pins = Pins.Windows;
+        _pinListMenu.Items.Clear();
+        _pinListMenu.Header = PinListText.Header(pins.Count);
+        if (pins.Count == 0)
+        {
+            _pinListMenu.Items.Add(new MenuItem { Header = PinListText.EmptyHint, IsEnabled = false });
+            return;
+        }
+
+        for (var i = 0; i < pins.Count; i++)
+        {
+            var pin = pins[i];
+            var item = new MenuItem
+            {
+                Header = PinListText.ItemLabel(i + 1, pin.NaturalWidth, pin.NaturalHeight),
+                // 缩略图复用贴图窗已解码的显示源（截图链路为零解码冻结图），不额外解码/复制像素
+                Icon = new Image
+                {
+                    Source = pin.DisplaySource,
+                    Width = 28,
+                    Height = 18,
+                    Stretch = System.Windows.Media.Stretch.Uniform,
+                },
+                ToolTip = "点击把这张贴图激活并置于最前",
+            };
+            item.Click += (_, _) => ActivatePin(pin);
+            _pinListMenu.Items.Add(item);
+        }
+
+        _pinListMenu.Items.Add(new Separator());
+        var closeAll = new MenuItem { Header = PinListText.CloseAll };
+        closeAll.Click += (_, _) => Pins.CloseAll();
+        _pinListMenu.Items.Add(closeAll);
+    }
+
+    /// <summary>把指定贴图提到同层最前并抢键盘焦点（焦点落上后 Esc 关闭 / F9 穿透等快捷键立刻可用）。
+    /// 置顶窗之间互压：先取消再恢复 Topmost 把该窗提到最前；Activate 负责前台与键盘焦点
+    /// （托盘菜单点击时本进程本就持有前台，Activate 足够，无需 Alt 点放类阶梯）。</summary>
+    private static void ActivatePin(PinWindow pin)
+    {
+        if (!pin.IsVisible) return;
+        pin.Topmost = false;
+        pin.Topmost = true;
+        pin.Activate();
     }
 
     /// <summary>窗口经关闭按钮隐藏进托盘后调用：每进程首次弹气泡，告知程序仍在通知区域运行。</summary>

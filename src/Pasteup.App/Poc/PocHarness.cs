@@ -29,6 +29,7 @@ public static class PocHarness
         switch (mode)
         {
             case "pin-memory": RunPinMemory(app); break;
+            case "tray-menu": RunTrayMenu(app); break;
             case "overlay": RunOverlay(app); break;
             case "shot": RunShot(app); break;
             case "caret": RunCaret(app); break;
@@ -55,6 +56,119 @@ public static class PocHarness
         {
             try { File.AppendAllText(path, line + Environment.NewLine); } catch (IOException) { }
         }
+    }
+
+    /// <summary>
+    /// 闸门：托盘「贴图列表」二级菜单（2026-11-14）。用**真实装配路径** <see cref="App.BuildTrayMenu"/> 构建菜单，
+    /// 程序化打开/触发菜单项（不依赖鼠标注入，自动化会话/前台锁下同样可跑），校验：
+    /// 五项主菜单、标题带当前贴图数、每张一行（序号 + 物理尺寸 + 缩略图）、「全部关闭」清空、0 张回到禁用提示。
+    /// 点击行激活置前只输出观察值（前台锁在自动化会话里可能拒绝 Activate，不作为闸门）。
+    /// 背景：自定义 MenuItem 模板原先缺 PART_Popup，任何二级菜单都弹不出来——本闸门防该回退。
+    /// </summary>
+    private static void RunTrayMenu(Application app)
+    {
+        var pasteup = (App)app;
+        app.Dispatcher.Invoke(() =>
+        {
+            var fail = 0;
+            void Check(string name, bool ok, string detail)
+            {
+                Emit("tray-menu", $"{name}\t{(ok ? "PASS" : "FAIL")}\t{detail}");
+                if (!ok) fail++;
+            }
+            // 两张不同物理尺寸的贴图（行序 = 打开序）
+            pasteup.Pins.Open(PaintPng(200, 100), 200, 100, 1.0);
+            pasteup.Pins.Open(PaintPng(300, 150), 300, 150, 1.0);
+            Pump(app, 400);
+            Check("pins-opened", pasteup.Pins.Count == 2, $"count={pasteup.Pins.Count}");
+
+            var menu = pasteup.BuildTrayMenu();
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.AbsolutePoint;
+            menu.HorizontalOffset = 120;
+            menu.VerticalOffset = 120;
+            menu.IsOpen = true;
+            Pump(app, 600);
+
+            var top = menu.Items.OfType<System.Windows.Controls.MenuItem>()
+                .Select(m => m.Header?.ToString() ?? "").ToList();
+            var expectedTop = new List<string>
+            {
+                "唤起面板", "截图", PinListText.Header(pasteup.Pins.Count), "设置", "退出",
+            };
+            Check("top-items", top.SequenceEqual(expectedTop), string.Join("|", top));
+
+            var pinList = menu.Items.OfType<System.Windows.Controls.MenuItem>()
+                .FirstOrDefault(m => (m.Header?.ToString() ?? "").StartsWith(PinListText.Title, StringComparison.Ordinal));
+            Check("pin-list-item", pinList is not null, "");
+            if (pinList is null)
+            {
+                Emit("tray-menu", $"verdict\tFAIL\tno-pin-list-item");
+                app.Shutdown(1);
+                return;
+            }
+
+            Check("header-count", (pinList.Header?.ToString() ?? "").Contains($"（{pasteup.Pins.Count}）", StringComparison.Ordinal),
+                pinList.Header?.ToString() ?? "");
+
+            var rows = pinList.Items.OfType<System.Windows.Controls.MenuItem>()
+                .Where(m => (m.Header?.ToString() ?? "").StartsWith("贴图 ", StringComparison.Ordinal)).ToList();
+            Check("row-count", rows.Count == 2, $"rows={rows.Count}");
+            Check("row-labels",
+                rows.Count == 2
+                && rows[0].Header?.ToString() == PinListText.ItemLabel(1, 200, 100)
+                && rows[1].Header?.ToString() == PinListText.ItemLabel(2, 300, 150),
+                string.Join("|", rows.Select(r => r.Header?.ToString() ?? "")));
+            Check("row-icons", rows.All(r => r.Icon is System.Windows.Controls.Image { Source: not null }), "");
+            Check("rows-enabled", rows.All(r => r.IsEnabled), "");
+
+            var closeAll = pinList.Items.OfType<System.Windows.Controls.MenuItem>()
+                .FirstOrDefault(m => m.Header?.ToString() == PinListText.CloseAll);
+            Check("close-all-item", closeAll is not null, "");
+
+            // 真正展开二级菜单：Menu.Item 模板必须有 PART_Popup，否则 IsSubmenuOpen=true 也不会有弹层
+            //（2026-11-14 修复前的实际故障形态：UIA 报 Expanded、屏幕上什么都没有）
+            pinList.IsSubmenuOpen = true;
+            Pump(app, 700);
+            Check("submenu-opens", pinList.IsSubmenuOpen, $"open={pinList.IsSubmenuOpen}");
+            pinList.IsSubmenuOpen = false;
+            Pump(app, 200);
+
+            // 点击第一行 → 该贴图激活置前（观察值；前台锁可能拒绝，不设闸门）
+            if (rows.Count > 0)
+            {
+                var pin0 = pasteup.Pins.Windows[0];
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(pin0).Handle;
+                rows[0].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+                Pump(app, 400);
+                Emit("tray-menu",
+                    $"activate-obs\tactive={pin0.IsActive}\tfg=0x{Win32Input.ForegroundWindow().ToInt64():X}\thwnd=0x{hwnd.ToInt64():X}");
+            }
+
+            // 「全部关闭」→ 贴图清零
+            if (closeAll is not null)
+            {
+                closeAll.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+                Pump(app, 500);
+            }
+            Check("close-all", pasteup.Pins.Count == 0, $"count={pasteup.Pins.Count}");
+
+            // 重开菜单 → 0 张时只有一行禁用提示、标题回落为裸标题
+            menu.IsOpen = false;
+            Pump(app, 200);
+            menu.IsOpen = true;
+            Pump(app, 500);
+            var empty = pinList.Items.OfType<System.Windows.Controls.MenuItem>().ToList();
+            Check("empty-hint",
+                empty.Count == 1 && !empty[0].IsEnabled && empty[0].Header?.ToString() == PinListText.EmptyHint,
+                empty.Count == 1 ? empty[0].Header?.ToString() ?? "" : $"items={empty.Count}");
+            Check("header-reset", pinList.Header?.ToString() == PinListText.Title, pinList.Header?.ToString() ?? "");
+            menu.IsOpen = false;
+
+            Emit("tray-menu", $"verdict\t{(fail == 0 ? "PASS" : "FAIL")}\tfails={fail}");
+            // 本模式开过 ContextMenu Popup 与贴图窗，实测 app.Shutdown() 会留下进程不退（POC 无正常退出需求，
+            // 直接结束进程；与 pin-memory 等无 Popup 的模式不同，这里不冒险走正常退出流程）。
+            Environment.Exit(fail == 0 ? 0 : 1);
+        });
     }
 
     /// <summary>闸门 1：20 个贴图窗口 × 3 轮开合，工作集须回归。</summary>

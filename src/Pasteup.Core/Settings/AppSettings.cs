@@ -25,6 +25,9 @@ public sealed class AppSettings
     public string ScreenshotHotkey { get; set; } = DefaultScreenshotHotkey;
     public bool PasteOnEnter { get; set; } = true;
     public bool SummonResetToTop { get; set; } = true;
+    // 开机自启（2026-11-14）：登录 Windows 后自动在通知区域运行。默认关；旧 settings.json 缺该字段
+    // 反序列化后自然为 false，无需迁移逻辑。bool 不参与 IsValid 校验。
+    public bool StartWithWindows { get; set; }
     public PanelAnchorMode AnchorMode { get; set; } = PanelAnchorMode.Caret;
     public int HistoryCapacity { get; set; } = 1000;
     public int RetentionDays { get; set; } = 90;

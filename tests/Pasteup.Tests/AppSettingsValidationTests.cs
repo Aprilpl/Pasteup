@@ -102,6 +102,51 @@ public class AppSettingsValidationTests
         Assert.Equal("Alt+J", s.ScreenshotHotkey);
     }
 
+    [Fact]
+    public void Default_invoke_hotkey_stays_alt_v_and_start_with_windows_defaults_off()
+    {
+        // 2026-11-14：需求明确「唤醒面板默认仍为 Alt+V」——顺带锁定截图热键默认值与新设置默认关，
+        // 防止后续改动误改默认值（既有用户升级后行为漂移）。
+        var s = new AppSettings();
+        Assert.Equal("Alt+V", s.InvokeHotkey);
+        Assert.Equal(AppSettings.DefaultInvokeHotkey, s.InvokeHotkey);
+        Assert.Equal("Alt+S", s.ScreenshotHotkey);
+        Assert.False(s.StartWithWindows);
+        Assert.True(s.IsValid());
+    }
+
+    [Fact]
+    public void SettingsStore_roundtrips_StartWithWindows()
+    {
+        var dir = TempDir();
+        try
+        {
+            new SettingsStore(dir).Save(new AppSettings { StartWithWindows = true });
+            // 重新构造 store 再读：确认真的经过 JSON 落盘/读回（设置页开关可持久化）
+            Assert.True(new SettingsStore(dir).Load().StartWithWindows);
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
+    [Fact]
+    public void Legacy_settings_without_StartWithWindows_field_defaults_to_off()
+    {
+        var dir = TempDir();
+        try
+        {
+            // 升级路径：旧版 settings.json 没有该字段；bool 缺省即 false，无需迁移逻辑
+            File.WriteAllText(Path.Combine(dir, "settings.json"), "{\"Theme\":2}");
+            Assert.False(new SettingsStore(dir).Load().StartWithWindows);
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
     private static string TempDir()    {
         var dir = Path.Combine(Path.GetTempPath(), "pasteup-settings-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);

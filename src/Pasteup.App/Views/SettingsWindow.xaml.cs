@@ -231,18 +231,8 @@ public partial class SettingsWindow : Window
         SetSeg(ThemeSystem, mode == PstThemeMode.System);
     }
 
-    private static void SetSeg(Button b, bool active)
-    {
-        b.Background = active
-            ? (System.Windows.Media.Brush)FindRes("AccentTintBrush")
-            : (System.Windows.Media.Brush)FindRes("ControlBgBrush");
-        b.Foreground = active
-            ? (System.Windows.Media.Brush)FindRes("AccentBrush")
-            : (System.Windows.Media.Brush)FindRes("TextBrush");
-    }
-
-    private static object FindRes(string key) =>
-        Application.Current.TryFindResource(key) ?? throw new InvalidOperationException($"缺少令牌 {key}");
+    /// <summary>分段钮选中态交给 <see cref="SegmentButtons"/>：只挂资源引用，主题切换后自动跟着换色。</summary>
+    private static void SetSeg(Button b, bool active) => SegmentButtons.SetActive(b, active);
 
     private void OnNavGeneral(object sender, RoutedEventArgs e) => Nav(PageGeneral, TabGeneral);
     private void OnNavHotkeys(object sender, RoutedEventArgs e) => Nav(PageHotkeys, TabHotkeys);

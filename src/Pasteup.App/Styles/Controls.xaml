@@ -357,23 +357,43 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
-                    <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="10,0" Margin="1,1" Height="32">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <!-- 图标列 Auto：无 Icon 的菜单（托盘/贴图窗）塌缩为零宽，视觉与旧版一致 -->
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <ContentPresenter x:Name="IconHost" ContentSource="Icon" VerticalAlignment="Center"
-                                              TextBlock.FontSize="{DynamicResource FontSizeRow}"/>
-                            <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
-                                              VerticalAlignment="Center" Margin="8,0,12,0"/>
-                            <TextBlock x:Name="Gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}"
-                                       FontFamily="{DynamicResource FontMono}" FontSize="{DynamicResource FontSizeMicro}"
-                                       Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
+                    <Grid>
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="10,0" Margin="1,1" Height="32">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <!-- 图标列 Auto：无 Icon 的菜单（托盘/贴图窗）塌缩为零宽，视觉与旧版一致 -->
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <!-- 子菜单箭头列：仅「有子项」的菜单项占宽（见下方 HasItems 触发器），普通项塌缩 -->
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter x:Name="IconHost" ContentSource="Icon" VerticalAlignment="Center"
+                                                  TextBlock.FontSize="{DynamicResource FontSizeRow}"/>
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
+                                                  VerticalAlignment="Center" Margin="8,0,12,0"/>
+                                <TextBlock x:Name="Gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                                           FontFamily="{DynamicResource FontMono}" FontSize="{DynamicResource FontSizeMicro}"
+                                           Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SubArrow" Grid.Column="3" Text="&#x203A;" Visibility="Collapsed"
+                                           FontFamily="{DynamicResource FontMono}" FontSize="{DynamicResource FontSizeMicro}"
+                                           Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                            </Grid>
+                        </Border>
+                        <!-- 二级菜单宿主：WPF 的 MenuItem 靠模板里的 PART_Popup 开子菜单，本自定义模板原先缺它
+                             —— 状态会显示已展开但什么都不弹（2026-11-14 托盘「贴图列表」实机实证）。
+                             内容边框沿用与 ContextMenu 相同的令牌（圆角/描边/内缩）。 -->
+                        <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                               IsOpen="{TemplateBinding IsSubmenuOpen}" Placement="Right"
+                               HorizontalOffset="-4" VerticalOffset="-4" PopupAnimation="Fade">
+                            <Border Background="{DynamicResource SheetBrush}" BorderBrush="{DynamicResource EdgeBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="4">
+                                <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource RowHoverBrush}"/>
@@ -383,6 +403,9 @@
                         </Trigger>
                         <Trigger Property="InputGestureText" Value="">
                             <Setter TargetName="Gesture" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="True">
+                            <Setter TargetName="SubArrow" Property="Visibility" Value="Visible"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

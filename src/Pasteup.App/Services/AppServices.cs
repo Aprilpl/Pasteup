@@ -218,6 +218,10 @@ public sealed class PinCoordinator
     private readonly ObservableCollection<PinWindow> _windows = [];
     public int Count => _windows.Count;
 
+    /// <summary>当前打开的贴图窗口（创建顺序）。供托盘「贴图列表」在菜单展开时实时枚举；
+    /// 只读视图，增删仍由协调器自身维护。</summary>
+    public IReadOnlyList<PinWindow> Windows => _windows;
+
     public event Action? Changed;
 
     public void Open(byte[] png, int width, int height, double opacity,

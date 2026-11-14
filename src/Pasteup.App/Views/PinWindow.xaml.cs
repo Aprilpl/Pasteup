@@ -7,10 +7,19 @@ namespace Pasteup.App.Views;
 
 public partial class PinWindow : Window
 {
-    private readonly double _naturalWidth;
-    private readonly double _naturalHeight;
+    private readonly int _naturalWidth;
+    private readonly int _naturalHeight;
     private double _baseScaleX = 1.0; // 物理像素 → 本窗口 DIP（OnSourceInitialized 按目标显示器 DPI 确定）
     private bool _clickThrough;
+
+    /// <summary>托盘「贴图列表」的缩略图源：直接复用已解码的显示源（截图链路为零解码冻结图），
+    /// 不额外解码、不复制像素。</summary>
+    public System.Windows.Media.ImageSource DisplaySource => Img.Source;
+
+    /// <summary>选区原始物理像素尺寸（贴图窗口按显示器 DPI 折算后显示，菜单里报告原图尺寸）。</summary>
+    public int NaturalWidth => _naturalWidth;
+
+    public int NaturalHeight => _naturalHeight;
 
     public PinWindow(byte[] png, int physicalWidth, int physicalHeight, double opacity,
         System.Windows.Media.ImageSource? display = null)
